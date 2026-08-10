@@ -1,4 +1,4 @@
-import { DEFAULT_NOTIFICATION_SETTINGS } from "@/lib/db/repositories/notification-settings-repository";
+import { DEFAULT_NOTIFICATION_SETTINGS } from "@/lib/settings/notification-settings";
 
 type DemoSettings = {
   morning_enabled: boolean;

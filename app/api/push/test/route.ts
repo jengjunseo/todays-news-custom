@@ -1,7 +1,10 @@
 import { z } from "zod";
 
 import { rejectUnauthorized } from "@/lib/auth/api-guard";
-import { createSupabaseServiceClient } from "@/lib/db/supabase";
+import {
+  PersonalStateRepository,
+  type ActivePushSubscription,
+} from "@/lib/db/repositories/personal-state-repository";
 import { isExpiredPushError, sendWebPush } from "@/lib/push/send";
 
 const Input = z.object({ endpoint: z.string().url().max(4096) });
@@ -14,14 +17,14 @@ export async function POST(request: Request) {
     return Response.json({ error: "서버 Push 구독이 필요합니다." }, { status: 400 });
   }
 
-  const client = createSupabaseServiceClient();
-  const { data, error } = await client
-    .from("push_subscriptions")
-    .select("endpoint,p256dh,auth")
-    .eq("endpoint", parsed.data.endpoint)
-    .is("revoked_at", null)
-    .single();
-  if (error || !data) return Response.json({ error: "활성 구독을 찾을 수 없습니다." }, { status: 404 });
+  const repository = new PersonalStateRepository();
+  let data: ActivePushSubscription | null;
+  try {
+    data = await repository.findActivePushSubscription(parsed.data.endpoint);
+  } catch {
+    return Response.json({ error: "활성 구독을 찾을 수 없습니다." }, { status: 404 });
+  }
+  if (!data) return Response.json({ error: "활성 구독을 찾을 수 없습니다." }, { status: 404 });
 
   try {
     await sendWebPush(
@@ -37,7 +40,11 @@ export async function POST(request: Request) {
     return Response.json({ ok: true });
   } catch (pushError) {
     if (isExpiredPushError(pushError)) {
-      await client.from("push_subscriptions").update({ revoked_at: new Date().toISOString() }).eq("endpoint", data.endpoint);
+      try {
+        await repository.revokePushSubscription(data.endpoint);
+      } catch {
+        // Preserve the Push response even if best-effort revocation persistence fails.
+      }
       return Response.json({ error: "만료된 구독입니다. 알림을 다시 켜 주세요." }, { status: 410 });
     }
     return Response.json({ error: "테스트 Push를 보내지 못했습니다." }, { status: 502 });

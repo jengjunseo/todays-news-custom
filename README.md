@@ -17,7 +17,7 @@ copy .env.example .env.local
 pnpm dev
 ```
 
-`.env.local`의 `DEMO_MODE=true`에서는 외부 검색, AI, Supabase secret 없이 두 신문면의 전체 reader flow를 fixture로 실행합니다.
+`.env.local`의 `DEMO_MODE=true`에서는 외부 검색, AI, database 연결 없이 두 신문면의 전체 reader flow를 fixture로 실행합니다.
 
 ## 핵심 경계
 
@@ -44,7 +44,7 @@ Reading time:
 - `lib/pipeline/run-daily-digest.ts` — 한 면/전체 면 생성 canonical path
 - `lib/digest/summarize-story.ts` — grounded AI와 deterministic fallback
 - `lib/digest/read-digest.ts` — 발행 데이터 전용 read path
-- `supabase/migrations/` — `(preset_id, source_date)` 격리 schema와 scheduler
+- `db/migrations/` — provider-neutral PostgreSQL schema
 - `docs/ADDING_A_PRESET.md` — 다음 면을 추가하는 실제 절차
 
 ## 환경변수
@@ -56,8 +56,7 @@ Reading time:
 - `AI_PROVIDER=openrouter|gemini`: editorial provider 선택. 생략하면 기존과 같이 OpenRouter
 - `AI_MODEL`: 선택한 provider의 모델 ID
 - `OPENROUTER_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`: 선택한 provider의 인증 키
-- `DATABASE_URL`: pipeline publish/read용 direct Postgres 연결
-- `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`: read/reflection/settings 서버 API
+- `DATABASE_URL`: 모든 publish/read/reflection/settings/push persistence의 PostgreSQL 연결
 - `APP_PASSWORD`, `AUTH_SECRET`, `CRON_SECRET`: 개인 접근과 scheduler 인증
 - VAPID 변수: 선택적인 Push
 
@@ -75,8 +74,8 @@ pnpm test:e2e
 
 fixture certification은 noise 제거, canonical provenance, 중복 사건 grouping, grounded fallback, 동일 날짜 다중 paper 격리, local read/reflection 격리를 포함합니다.
 
-## Supabase / scheduler
+## PostgreSQL / scheduler
 
-새 TARGET Supabase project에 migration을 순서대로 적용합니다. public table은 RLS가 켜져 있고 anon/authenticated policy가 없으며 server-only `service_role` 권한만 명시적으로 부여합니다. 2026년 Supabase의 “새 table 자동 Data API 노출 중단” 변경을 전제로 합니다.
+PostgreSQL 13 이상의 빈 database에 `db/migrations/202608020001_initial_schema.sql`을 적용하고 `DATABASE_URL`만 설정합니다. Neon을 포함한 일반 PostgreSQL connection string을 사용하며 provider SDK, Data API, privileged service role을 요구하지 않습니다. 자세한 절차는 `db/README.md`에 있습니다.
 
-Production cron은 migration을 검토하고 Vault에 `app_url`, `cron_secret`을 설정한 뒤 사용자가 승인한 환경에서만 활성화합니다. 이 저장소는 secret이나 production state를 포함하지 않습니다.
+Scheduler는 database 밖의 책임입니다. 외부 scheduler가 `Authorization: Bearer <CRON_SECRET>`으로 `/api/jobs/generate-daily`와 `/api/jobs/send-due`를 호출합니다. 이 작업에서는 Production scheduler나 database를 구성하지 않습니다.
