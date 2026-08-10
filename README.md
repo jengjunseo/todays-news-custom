@@ -50,8 +50,9 @@ Reading time:
 ## 환경변수
 
 - `DEMO_MODE=true`: fixture discovery와 deterministic editorial output
-- `DISCOVERY_PROVIDER=fixture|naver`: 현재 discovery provider 선택
-- `NAVER_API_HUB_CLIENT_ID`, `NAVER_API_HUB_CLIENT_SECRET`: live NAVER discovery
+- `DISCOVERY_PROVIDER=fixture|live`: `live`는 Preset route channel에 따라 provider를 명시적으로 선택합니다. 기존 `naver` 값도 live 설정으로 호환됩니다.
+- `NAVER_API_HUB_CLIENT_ID`, `NAVER_API_HUB_CLIENT_SECRET`: Wonju의 `news-search` live discovery
+- `DISCOVERY_MODEL`: Girls Band Cry의 `web-search`에 사용하는 Gemini 모델. editorial `AI_MODEL`과 독립적입니다.
 - `AI_PROVIDER=openrouter|gemini`: editorial provider 선택. 생략하면 기존과 같이 OpenRouter
 - `AI_MODEL`: 선택한 provider의 모델 ID
 - `OPENROUTER_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`: 선택한 provider의 인증 키
@@ -60,7 +61,7 @@ Reading time:
 - `APP_PASSWORD`, `AUTH_SECRET`, `CRON_SECRET`: 개인 접근과 scheduler 인증
 - VAPID 변수: 선택적인 Push
 
-새로운 필수 유료 API는 없습니다. Girls Band Cry처럼 해외·공식 source가 더 중요한 면을 위해서는 `DiscoveryProvider` 구현을 추가할 수 있지만 editorial core와 reader는 바꾸지 않습니다.
+Girls Band Cry의 다국어 `web-search`는 기존 Google Gemini credential을 사용합니다. Google Search grounding URL을 실제로 읽어 제목, 본문 설명, 발행시각을 확인할 수 있는 문서만 canonical evidence로 채택하며 모델 prose 자체는 저장하지 않습니다. Wonju는 기존 Naver `news-search`를 유지합니다.
 
 ## 검증
 

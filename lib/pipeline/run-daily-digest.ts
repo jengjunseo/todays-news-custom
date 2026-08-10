@@ -169,10 +169,17 @@ export async function runPresetPaper(
 }
 
 export async function runAllPresetPapers(options: Omit<RunPresetPaperOptions, "preset" | "presetId"> = {}) {
+  return runPresetRegistry(NEWSPAPER_PRESETS, options);
+}
+
+export async function runPresetRegistry(
+  presets: readonly NewspaperPreset[],
+  options: Omit<RunPresetPaperOptions, "preset" | "presetId"> = {},
+) {
   const results = await Promise.allSettled(
-    NEWSPAPER_PRESETS.map((preset) => runPresetPaper(preset, options)),
+    presets.map((preset) => runPresetPaper(preset, options)),
   );
-  return NEWSPAPER_PRESETS.map((preset, index) => {
+  return presets.map((preset, index) => {
     const result = results[index]!;
     return result.status === "fulfilled"
       ? result.value

@@ -21,11 +21,11 @@ export const girlsBandCryPreset = definePreset({
     { id: "creators", label: "제작진·활동", priority: 6, relevanceTerms: ["제작진", "감독", "성우", "스태프", "キャスト", "スタッフ"] },
   ],
   discovery: [
-    { id: "gbc-music", channel: "news-search", sectionId: "music", intent: "신곡·앨범·음원처럼 실제 음악 활동의 변화", queries: ["걸즈 밴드 크라이 신곡", "トゲナシトゲアリ 新曲"], locales: ["ko-KR", "ja-JP"], excludeTerms: ["재고", "중고", "가사 번역"] },
-    { id: "gbc-live", channel: "news-search", sectionId: "live", intent: "확정된 라이브·공연·투어 발표와 주요 결과", queries: ["토게나시 토게아리 라이브", "トゲナシトゲアリ ライブ"], locales: ["ko-KR", "ja-JP"], excludeTerms: ["티켓 양도", "직캠 모음"] },
-    { id: "gbc-official", channel: "news-search", sectionId: "official", intent: "작품과 프로젝트의 공식 발표", queries: ["걸즈 밴드 크라이 공식 발표", "ガールズバンドクライ 公式"], locales: ["ko-KR", "ja-JP"], excludeTerms: ["루머", "유출"] },
-    { id: "gbc-interview", channel: "news-search", sectionId: "interview", intent: "멤버·성우·제작진의 의미 있는 인터뷰", queries: ["걸즈 밴드 크라이 인터뷰", "ガールズバンドクライ インタビュー"], locales: ["ko-KR", "ja-JP"], excludeTerms: ["자동 번역"] },
-    { id: "gbc-creators", channel: "news-search", sectionId: "creators", intent: "제작진과 밴드의 주요 활동", queries: ["걸즈 밴드 크라이 제작진", "ガールズバンドクライ スタッフ"], locales: ["ko-KR", "ja-JP"], excludeTerms: ["굿즈 재고"] },
+    { id: "gbc-music", channel: "web-search", sectionId: "music", intent: "신곡·앨범·음원처럼 실제 음악 활동의 변화", queries: ["걸즈 밴드 크라이 신곡", "トゲナシトゲアリ 新曲"], locales: ["ko-KR", "ja-JP"], excludeTerms: ["재고", "중고", "가사 번역"] },
+    { id: "gbc-live", channel: "web-search", sectionId: "live", intent: "확정된 라이브·공연·투어 발표와 주요 결과", queries: ["토게나시 토게아리 라이브", "トゲナシトゲアリ ライブ"], locales: ["ko-KR", "ja-JP"], excludeTerms: ["티켓 양도", "직캠 모음"] },
+    { id: "gbc-official", channel: "web-search", sectionId: "official", intent: "작품과 프로젝트의 공식 발표", queries: ["걸즈 밴드 크라이 공식 발표", "ガールズバンドクライ 公式"], locales: ["ko-KR", "ja-JP"], excludeTerms: ["루머", "유출"] },
+    { id: "gbc-interview", channel: "web-search", sectionId: "interview", intent: "멤버·성우·제작진의 의미 있는 인터뷰", queries: ["걸즈 밴드 크라이 인터뷰", "ガールズバンドクライ インタビュー"], locales: ["ko-KR", "ja-JP"], excludeTerms: ["자동 번역"] },
+    { id: "gbc-creators", channel: "web-search", sectionId: "creators", intent: "제작진과 밴드의 주요 활동", queries: ["걸즈 밴드 크라이 제작진", "ガールズバンドクライ スタッフ"], locales: ["ko-KR", "ja-JP"], excludeTerms: ["굿즈 재고"] },
   ],
   editorial: {
     importantSignals: ["신곡", "앨범", "공연", "투어", "공식", "인터뷰", "발표", "新曲", "ライブ", "公式"],

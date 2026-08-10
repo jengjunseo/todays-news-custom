@@ -15,7 +15,7 @@ export const EditorialSectionSchema = z.object({
 
 export const DiscoveryRouteSchema = z.object({
   id: PresetIdSchema,
-  channel: z.enum(["news-search", "official-feed"]),
+  channel: z.enum(["news-search", "web-search", "official-feed"]),
   sectionId: PresetIdSchema,
   intent: z.string().min(1).max(240),
   queries: z.array(z.string().min(1)).min(1),
