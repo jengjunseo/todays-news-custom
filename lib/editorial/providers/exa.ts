@@ -2,6 +2,11 @@ import { z } from "zod";
 
 import { cleanEvidenceText } from "@/lib/editorial/normalize-evidence";
 import {
+  fetchPrimaryIdentitySurface,
+  mapWithConcurrency,
+} from "@/lib/editorial/providers/html-evidence";
+import { hasTitleSubjectIdentity } from "@/lib/editorial/subject-identity";
+import {
   RawEvidenceCandidateSchema,
   type DiscoveryProvider,
   type RawEvidenceCandidate,
@@ -95,11 +100,26 @@ export class ExaDiscoveryProvider implements DiscoveryProvider {
     });
     if (!response.ok) throw new Error(`Exa search failed (${response.status})`);
     const payload = ExaSearchResponseSchema.parse(await response.json());
-    const candidates = payload.results
+    const parsedCandidates = payload.results
       .slice(0, MAX_RESULTS)
       .map((result) => toCandidate(result, input))
       .filter((candidate): candidate is RawEvidenceCandidate => candidate !== null);
-    const rejectedCount = Math.min(payload.results.length, MAX_RESULTS) - candidates.length;
+    const candidates = await mapWithConcurrency(parsedCandidates, 2, async (candidate) => {
+      if (!input.preset.subjectIdentity || hasTitleSubjectIdentity(input.preset, candidate.title)) {
+        return candidate;
+      }
+      const surface = await fetchPrimaryIdentitySurface({
+        url: candidate.url,
+        sourceTitle: candidate.title,
+        fetcher: this.fetcher,
+      });
+      return RawEvidenceCandidateSchema.parse({
+        ...candidate,
+        title: surface?.title || candidate.title,
+        identityLead: surface?.lead || undefined,
+      });
+    });
+    const rejectedCount = Math.min(payload.results.length, MAX_RESULTS) - parsedCandidates.length;
     if (rejectedCount > 0) {
       console.log(JSON.stringify({
         stage: "discovery_items_rejected",

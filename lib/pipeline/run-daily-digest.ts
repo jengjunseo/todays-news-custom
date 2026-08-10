@@ -3,7 +3,10 @@ import { isExternalAiCallError } from "@/lib/ai/structured-generator";
 import { clusterAndRankEvidence, topCandidatesBySection } from "@/lib/editorial/cluster-evidence";
 import { collectPresetEvidence } from "@/lib/editorial/collect-evidence";
 import type { DiscoveryProvider } from "@/lib/editorial/types";
-import { createFallbackDigestItem, summarizeStory } from "@/lib/digest/summarize-story";
+import {
+  EditorialSectionFailure,
+  summarizeStory,
+} from "@/lib/digest/summarize-story";
 import { generateDailyNudges } from "@/lib/nudges/generate-daily-nudges";
 import { DEFAULT_PRESET_ID, getPreset, NEWSPAPER_PRESETS } from "@/lib/presets";
 import type { NewspaperPreset } from "@/lib/presets/schema";
@@ -72,6 +75,8 @@ export async function runPresetPaper(
     ? `paper:${preset.id}:${sourceDate}:force:${crypto.randomUUID()}`
     : `paper:${preset.id}:${sourceDate}:v1`;
   await publisher.startRun(runKey, preset.id, sourceDate);
+  let survivingValidItemCount = 0;
+  let skippedSectionCount = 0;
   try {
     logStage("discovery_started", { runKey });
     const evidence = await collectPresetEvidence({
@@ -90,7 +95,7 @@ export async function runPresetPaper(
         section.id,
         candidates[section.id] ?? [],
         options.summaryGenerator,
-        { preset, sectionLabel: section.label },
+        { preset, sectionLabel: section.label, runKey },
       )),
     );
     const primaryItems: Awaited<ReturnType<typeof summarizeStory>> = [];
@@ -112,18 +117,21 @@ export async function runPresetPaper(
         }
         return;
       }
-      const fallback = createFallbackDigestItem(
-        section.id,
-        sectionCandidates[0]!,
-        { preset, sectionLabel: section.label },
-      );
-      logStage("section_summary_fallback", {
+      skippedSectionCount += 1;
+      const failure = result.status === "fulfilled"
+        ? {
+            failureClass: "empty-editorial-selection",
+            firstAiCall: "succeeded",
+            correctionAttempted: false,
+          }
+        : editorialFailureDetails(result.reason);
+      logStage("section_editorial_skipped", {
         runKey,
         sectionId: section.id,
-        reason: result.status === "fulfilled" ? "empty-ai-result" : fallbackReason(result.reason),
-        clusterId: fallback.clusterId,
+        skipped: true,
+        candidateClusterId: sectionCandidates[0]!.id,
+        ...failure,
       });
-      primaryItems.push(fallback);
     });
 
     extraItems.sort((left, right) =>
@@ -132,8 +140,14 @@ export async function runPresetPaper(
     const remaining = Math.max(0, preset.editorial.desiredItemCount - primaryItems.length);
     const items = [...primaryItems, ...extraItems.slice(0, remaining).map(({ item }) => item)]
       .slice(0, preset.editorial.desiredItemCount);
+    survivingValidItemCount = items.length;
+    logStage("editorial_selection_completed", {
+      runKey,
+      skippedSectionCount,
+      survivingValidItemCount,
+    });
     if (items.length === 0) {
-      throw new Error(`${preset.displayName} 면을 발행할 grounded evidence가 없습니다.`);
+      throw new Error(`${preset.displayName} 면을 발행할 grounded evidence 또는 유효한 editorial item이 없습니다.`);
     }
 
     const nudges = await generateDailyNudges({ sourceDate, paperId: preset.id, items }, options.nudgeGenerator);
@@ -162,7 +176,12 @@ export async function runPresetPaper(
     logStage("paper_pipeline_completed", { runKey, status: "published", ...metrics });
     return { status: "published" as const, digestId: digest.id, presetId: preset.id, sourceDate, metrics };
   } catch (error) {
-    logStage("paper_pipeline_failed", { runKey, errorType: error instanceof Error ? error.name : typeof error });
+    logStage("paper_pipeline_failed", {
+      runKey,
+      errorType: error instanceof Error ? error.name : typeof error,
+      skippedSectionCount,
+      survivingValidItemCount,
+    });
     await publisher.failRun(runKey, error instanceof Error ? error.message : "unknown pipeline error");
     throw error;
   }
@@ -187,9 +206,18 @@ export async function runPresetRegistry(
   });
 }
 
-function fallbackReason(error: unknown) {
-  if (error instanceof Error && (error.name === "TimeoutError" || /timeout|operation (?:was )?aborted/i.test(error.message))) {
-    return "timeout";
+function editorialFailureDetails(error: unknown) {
+  if (error instanceof EditorialSectionFailure) {
+    return {
+      failureClass: error.failureClass,
+      firstAiCall: error.firstAiCall,
+      correctionAttempted: error.correctionAttempted,
+    };
   }
-  return isExternalAiCallError(error) ? "external-error" : "invalid-output";
+  if (error instanceof Error && (error.name === "TimeoutError" || /timeout|operation (?:was )?aborted/i.test(error.message))) {
+    return { failureClass: "timeout", firstAiCall: "failed", correctionAttempted: false };
+  }
+  return isExternalAiCallError(error)
+    ? { failureClass: "external-provider", firstAiCall: "failed", correctionAttempted: false }
+    : { failureClass: "other", firstAiCall: "failed", correctionAttempted: false };
 }

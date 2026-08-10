@@ -9,6 +9,7 @@ import { FixtureDiscoveryProvider } from "@/lib/editorial/providers/fixture";
 import { NaverDiscoveryProvider } from "@/lib/editorial/providers/naver";
 import { OfficialSourceDiscoveryProvider } from "@/lib/editorial/providers/official-source";
 import { scoreEvidenceRelevance } from "@/lib/editorial/relevance";
+import { evaluateSubjectIdentity } from "@/lib/editorial/subject-identity";
 import type { NewspaperPreset } from "@/lib/presets/schema";
 import { isOnKstDate } from "@/lib/time/kst";
 
@@ -85,6 +86,22 @@ export async function collectPresetEvidence(input: {
     for (const raw of result.raw) {
       if (!isOnKstDate(raw.publishedAt, input.sourceDate)) continue;
       try {
+        const identity = evaluateSubjectIdentity({
+          candidate: raw,
+          preset: input.preset,
+          route: result.route,
+          provider: result.provider.name,
+        });
+        if (!identity.accepted) {
+          console.log(JSON.stringify({
+            stage: "subject_identity_rejected",
+            presetId: input.preset.id,
+            routeId: result.route.id,
+            provider: result.provider.name,
+            proof: identity.proof,
+          }));
+          continue;
+        }
         const normalized = normalizeEvidence({
           raw,
           preset: input.preset,

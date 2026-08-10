@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { APICallError } from "ai";
+import { ZodError } from "zod";
 
 import type { StructuredGenerator } from "@/lib/ai/structured-generator";
 import {
@@ -27,9 +28,32 @@ const CATEGORY_LABEL: Record<NewsCategory, string> = {
 export type PresetEditorialContext = {
   preset: NewspaperPreset;
   sectionLabel: string;
+  runKey?: string;
 };
 
 type SummarizableCluster = StoryCluster | EvidenceCluster;
+
+export type EditorialFailureClass =
+  | "external-provider"
+  | "timeout"
+  | "structured-output"
+  | "grounding-validation"
+  | "editorial-quality-validation"
+  | "other";
+
+export class EditorialSectionFailure extends Error {
+  readonly correctionAttempted = true;
+
+  constructor(
+    message: string,
+    readonly failureClass: EditorialFailureClass,
+    readonly firstAiCall: "succeeded" | "failed",
+    cause: unknown,
+  ) {
+    super(message, { cause });
+    this.name = "EditorialSectionFailure";
+  }
+}
 
 function categoryLabel(category: NewsCategory, context?: PresetEditorialContext) {
   return context?.sectionLabel ?? CATEGORY_LABEL[category] ?? category;
@@ -53,6 +77,27 @@ function aiErrorLogDetails(error: unknown): Record<string, unknown> {
     if (responseBody) details.responseBody = responseBody;
   }
   return details;
+}
+
+function isTimeoutError(error: unknown) {
+  return error instanceof Error && (
+    error.name === "TimeoutError" ||
+    /timeout|timed out|operation (?:was )?aborted/i.test(error.message)
+  );
+}
+
+function classifyEditorialFailure(error: unknown): EditorialFailureClass {
+  if (isTimeoutError(error)) return "timeout";
+  if (isExternalAiCallError(error)) return "external-provider";
+  if (error instanceof ZodError) return "structured-output";
+  const message = error instanceof Error ? error.message : "";
+  if (/source ID|cluster ID|중복 cluster|후보 밖|다른 사건의 source/i.test(message)) {
+    return "grounding-validation";
+  }
+  if (/editorial|key point|생각해보기 질문|완결되지 않은/i.test(message)) {
+    return "editorial-quality-validation";
+  }
+  return "other";
 }
 
 type GroundedSource = {
@@ -236,6 +281,7 @@ function assertEditorialQuality(item: DigestItem) {
   }
 }
 
+/** Deterministic legacy/test helper. The live preset publication path must never call this. */
 export function createFallbackDigestItem(
   category: NewsCategory,
   cluster: SummarizableCluster,
@@ -452,7 +498,15 @@ export async function summarizeStory(
   const summaryStartedAt = Date.now();
   const sourceDate = limitedCandidates[0]!.targetDate;
   const logStage = (stage: string, details: Record<string, unknown> = {}) => {
-    console.log(JSON.stringify({ stage, sourceDate, category, elapsedMs: Date.now() - summaryStartedAt, ...details }));
+    console.log(JSON.stringify({
+      stage,
+      presetId: context?.preset.id,
+      runKey: context?.runKey,
+      sourceDate,
+      category,
+      elapsedMs: Date.now() - summaryStartedAt,
+      ...details,
+    }));
   };
   logStage("category_prompt_prepared", {
     candidateCount: limitedCandidates.length,
@@ -460,43 +514,61 @@ export async function summarizeStory(
     promptChars: prompt.length,
   });
 
+  let firstAiCall: "succeeded" | "failed" = "succeeded";
+  let firstError: unknown;
   try {
-    let first: unknown;
+    const first = await activeGenerator.generate({
+      schema: AiDigestSelectionSchema,
+      prompt,
+    });
+    logStage("category_first_ai_call_completed", { result: "success" });
     try {
-      first = await activeGenerator.generate({
-        schema: AiDigestSelectionSchema,
-        prompt,
-      });
-      logStage("category_first_ai_call_completed", { result: "success" });
-    } catch (firstCallError) {
-      logStage("category_first_ai_call_completed", {
+      const validated = validateGrounding(first, category, limitedCandidates, sources);
+      logStage("category_first_validation_completed", { result: "success", itemCount: validated.length });
+      return validated;
+    } catch (validationError) {
+      firstError = validationError;
+      logStage("category_first_validation_completed", {
         result: "error",
-        ...aiErrorLogDetails(firstCallError),
+        failureClass: classifyEditorialFailure(validationError),
       });
-      throw firstCallError;
     }
-    return validateGrounding(first, category, limitedCandidates, sources);
-  } catch (firstError) {
-    if (isExternalAiCallError(firstError)) throw firstError;
-    logStage("category_correction_started");
-    try {
-      const second = await activeGenerator.generate({
-        schema: AiDigestSelectionSchema,
-        prompt,
-        correction: `스키마와 grounding 규칙을 지키세요. 오류: ${firstError instanceof Error ? firstError.message : "invalid response"}`,
-      });
-      const corrected = validateGrounding(second, category, limitedCandidates, sources);
-      logStage("category_correction_completed", { result: "success" });
-      return corrected;
-    } catch (secondError) {
-      logStage("category_correction_completed", {
-        result: "error",
-        ...aiErrorLogDetails(secondError),
-      });
-      throw new Error(
-        `${categoryLabel(category, context)} 요약/grounding 실패: ${secondError instanceof Error ? secondError.message : "invalid response"}`,
-        { cause: secondError },
-      );
-    }
+  } catch (firstCallError) {
+    firstAiCall = "failed";
+    logStage("category_first_ai_call_completed", {
+      result: "error",
+      failureClass: classifyEditorialFailure(firstCallError),
+      ...aiErrorLogDetails(firstCallError),
+    });
+    if (isExternalAiCallError(firstCallError)) throw firstCallError;
+    firstError = firstCallError;
+  }
+
+  logStage("category_correction_started", {
+    firstAiCall,
+    firstFailureClass: classifyEditorialFailure(firstError),
+  });
+  try {
+    const second = await activeGenerator.generate({
+      schema: AiDigestSelectionSchema,
+      prompt,
+      correction: `스키마와 grounding 규칙을 지키세요. 오류: ${firstError instanceof Error ? firstError.message : "invalid response"}`,
+    });
+    const corrected = validateGrounding(second, category, limitedCandidates, sources);
+    logStage("category_correction_completed", { result: "success", itemCount: corrected.length });
+    return corrected;
+  } catch (secondError) {
+    const failureClass = classifyEditorialFailure(secondError);
+    logStage("category_correction_completed", {
+      result: "error",
+      failureClass,
+      ...aiErrorLogDetails(secondError),
+    });
+    throw new EditorialSectionFailure(
+      `${categoryLabel(category, context)} 요약/grounding 실패: ${secondError instanceof Error ? secondError.message : "invalid response"}`,
+      failureClass,
+      firstAiCall,
+      secondError,
+    );
   }
 }

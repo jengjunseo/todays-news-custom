@@ -97,6 +97,32 @@ function pageExcerpt(html: string, structuredDescription?: string) {
   return "";
 }
 
+function scopedLead(html: string) {
+  const scope = html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1]
+    ?? html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1]
+    ?? "";
+  if (!scope) return "";
+  const paragraphs = [...scope.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)]
+    .map((match) => cleanEvidenceText(match[1] ?? ""))
+    .filter((paragraph) => paragraph.length >= 20)
+    .slice(0, 2);
+  return cleanEvidenceText(paragraphs.join(" ")).slice(0, 800);
+}
+
+export function extractPrimaryIdentitySurface(input: {
+  html: string;
+  sourceTitle?: string;
+}) {
+  const structured = jsonLdArticle(input.html);
+  const title = pageTitle(input.html, input.sourceTitle, structured?.headline);
+  const lead = cleanEvidenceText(
+    scopedLead(input.html)
+      || structured?.description
+      || metaValue(input.html, ["og:description", "twitter:description", "description"]),
+  ).slice(0, 800);
+  return { title, lead };
+}
+
 export function extractEvidenceFromHtml(input: {
   html: string;
   finalUrl: string;
@@ -191,6 +217,31 @@ export async function fetchHtmlEvidence(input: {
       fallbackPublishedAt: input.fallbackPublishedAt,
       sourceType: input.sourceType,
     });
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchPrimaryIdentitySurface(input: {
+  url: string;
+  sourceTitle?: string;
+  fetcher?: typeof fetch;
+}) {
+  try {
+    const response = await (input.fetcher ?? fetch)(input.url, {
+      headers: { Accept: "text/html,application/xhtml+xml" },
+      cache: "no-store",
+      redirect: "follow",
+      signal: AbortSignal.timeout(12_000),
+    });
+    if (!response.ok) return null;
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    if (contentType && !/text\/html|application\/xhtml\+xml/.test(contentType)) return null;
+    const surface = extractPrimaryIdentitySurface({
+      html: await readTextWithLimit(response),
+      sourceTitle: input.sourceTitle,
+    });
+    return surface.title || surface.lead ? surface : null;
   } catch {
     return null;
   }

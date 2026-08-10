@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ExaDiscoveryProvider } from "@/lib/editorial/providers/exa";
+import { evaluateSubjectIdentity } from "@/lib/editorial/subject-identity";
 import { girlsBandCryPreset } from "@/lib/presets/girls-band-cry";
 
 const sourceDate = "2026-08-01";
@@ -83,5 +84,38 @@ describe("Exa web-search evidence adapter", () => {
 
     await expect(new ExaDiscoveryProvider("test-exa-key", fetcher).search(searchInput()))
       .resolves.toEqual([]);
+  });
+
+  it("uses the real article lead, not an Exa highlight, as identity evidence", async () => {
+    const articleUrl = "https://entertainment.example/miyeon-run-away";
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      if (String(input) === "https://api.exa.ai/search") {
+        return new Response(JSON.stringify({
+          results: [{
+            title: "i-dle 미연, 일본 첫 싱글 RUN AWAY 발표",
+            url: articleUrl,
+            publishedDate: "2026-08-01T03:00:00.000Z",
+            highlights: ["추천 기사에서는 걸즈 밴드 크라이 신곡과 라이브 소식도 소개했습니다."],
+          }],
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response(`<html><head><title>i-dle 미연, RUN AWAY 발표</title></head><body>
+        <article><p>미연이 일본 첫 오리지널 디지털 싱글의 발매일과 활동 계획을 공개했습니다.</p></article>
+        <aside>추천: ガールズバンドクライ 新曲 ライブ</aside>
+      </body></html>`, { status: 200, headers: { "content-type": "text/html" } });
+    });
+    const provider = new ExaDiscoveryProvider("test-exa-key", fetcher as typeof fetch);
+
+    const [raw] = await provider.search(searchInput());
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(raw?.identityLead).toBe("미연이 일본 첫 오리지널 디지털 싱글의 발매일과 활동 계획을 공개했습니다.");
+    expect(raw?.identityLead).not.toContain("ガールズバンドクライ");
+    expect(evaluateSubjectIdentity({
+      candidate: raw!,
+      preset: girlsBandCryPreset,
+      route,
+      provider: provider.name,
+    })).toEqual({ accepted: false, proof: "missing-subject" });
   });
 });

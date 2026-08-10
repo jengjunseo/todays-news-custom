@@ -12,6 +12,11 @@ export const girlsBandCryPreset = definePreset({
     { value: "Togenashi Togeari", language: "en" },
     { value: "トゲナシトゲアリ", language: "ja" },
   ],
+  subjectIdentity: {
+    associatedAliases: [
+      { value: "井芹仁菜", language: "ja" },
+    ],
+  },
   officialDomains: ["girls-band-cry.com", "togenashitogeari.com"],
   sections: [
     { id: "music", label: "음악", priority: 10, relevanceTerms: ["신곡", "앨범", "싱글", "음원", "楽曲", "リリース"] },

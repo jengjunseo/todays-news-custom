@@ -19,6 +19,7 @@
 
 - `id`: URL과 DB에 오래 쓰는 kebab-case stable ID
 - `aliases`: 한국어/영어/현지어 이름과 실제 검색에 필요한 별칭
+- `subjectIdentity`: title/실제 lead에서 주제가 반드시 확인돼야 하는 면만 opt-in합니다. 기존 `aliases`가 primary identity이고, 고유한 캐릭터명처럼 충분히 구체적인 이름만 `associatedAliases`에 둡니다.
 - `sections`: 전문 편집국이 다양하게 보여줄 사건 종류
 - `discovery`: provider 문법이 아닌 channel, intent, query, locale, 제외 의미
 - `editorial`: 중요한 변화, noise, 적정 item 수, filler 허용 여부
@@ -46,6 +47,8 @@
 ```
 
 `sourceUrls`는 해당 Preset의 `officialDomains` 안에 있어야 하며, adapter는 날짜가 맞는 실제 detail page만 canonical evidence로 반환합니다. `web-search` route는 `EXA_API_KEY`, `news-search` route는 Naver credential이 필요합니다. Discovery에는 LLM을 사용하지 않습니다.
+
+`subjectIdentity`를 쓰는 면에서 검색 query, Exa highlight, 추천/sidebar/boilerplate에만 alias가 등장하는 문서는 거절됩니다. direct official route는 검증된 URL/domain 자체를 identity 근거로 사용합니다.
 
 새로운 source가 정말 필요할 때만 `lib/editorial/providers/`에 `DiscoveryProvider`를 추가하고 canonical `RawEvidenceCandidate`까지만 반환합니다. provider-specific 응답을 normalize/relevance/cluster/editorial/publisher로 새게 하지 않습니다.
 
