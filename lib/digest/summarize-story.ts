@@ -130,6 +130,7 @@ function isCompleteSourceText(value: string) {
   return (
     !value.includes("...") &&
     !value.includes("…") &&
+    !/(?:^|\s)(?:주|월|일|년)\s*\d+[.]?$/u.test(value) &&
     hasBalancedQuotes(value)
   );
 }
@@ -199,13 +200,41 @@ function boundedText(value: string, maxLength: number, fallback: string) {
   return "확인된 보도 내용을 살펴봐야 합니다.";
 }
 
-const FALLBACK_WHY_IT_MATTERS: Partial<Record<NewsCategory, string>> = {
-  politics: "정책과 공공 결정은 시민이 이용하는 제도와 자원 배분에 영향을 줄 수 있어 실제 적용 범위를 확인할 필요가 있습니다.",
-  society: "사회 제도와 안전·복지의 변화는 일상에서 이용할 수 있는 지원과 책임의 범위를 바꿀 수 있어 후속 결과가 중요합니다.",
-  science: "연구 결과는 후속 검증을 거쳐야 지식이나 기술의 근거가 되므로 재현 여부와 적용 범위를 함께 봐야 합니다.",
-  technology: "기술 변화는 서비스 선택, 비용, 개인정보와 연결될 수 있어 실제 제공 범위와 이용 조건을 확인할 필요가 있습니다.",
-  economy: "경제 결정은 물가, 일자리, 대출과 소비 여건에 이어질 수 있어 발표 뒤 실제 수치가 어떻게 움직이는지 살펴봐야 합니다.",
-};
+const GENERIC_EDITORIAL_WORDS = new Set([
+  "관련", "보도", "사실", "내용", "변화", "영향", "상황", "실제", "무엇", "어떤",
+]);
+
+function meaningfulWords(value: string) {
+  return new Set(
+    normalizedText(value)
+      .toLocaleLowerCase("ko-KR")
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((word) => word.length > 1 && !GENERIC_EDITORIAL_WORDS.has(word)),
+  );
+}
+
+function assertEditorialQuality(item: DigestItem) {
+  const fields = [
+    item.oneLine,
+    item.overview,
+    ...item.keyPoints,
+    item.analogy,
+    item.whyItMatters,
+    item.socraticQuestion,
+  ];
+  if (fields.some((field) => !isCompleteSourceText(field))) {
+    throw new Error("완결되지 않은 editorial 문장입니다.");
+  }
+  if (item.keyPoints.some((point, index) =>
+    item.keyPoints.slice(index + 1).some((other) => isNearDuplicate(point, other)))) {
+    throw new Error("서로 중복되는 key point입니다.");
+  }
+  const anchors = meaningfulWords(`${item.headline} ${item.oneLine}`);
+  const questionWords = meaningfulWords(item.socraticQuestion);
+  if (![...anchors].some((word) => questionWords.has(word))) {
+    throw new Error("사건에 구체적이지 않은 생각해보기 질문입니다.");
+  }
+}
 
 export function createFallbackDigestItem(
   category: NewsCategory,
@@ -213,38 +242,54 @@ export function createFallbackDigestItem(
   context?: PresetEditorialContext,
 ): DigestItem {
   const articles = [...cluster.articles].sort((left, right) => left.id.localeCompare(right.id));
-  const headline =
-    distinctTexts([cluster.representativeTitle, ...articles.map((article) => article.title)])
-      .find((title) => title.length <= 120 && isCompleteSourceText(title)) ?? "확인된 주요 보도";
   const facts = distinctTexts(
     articles.flatMap((article) => completeSourceSentences(article.description)),
-  ).filter((text) => textKey(text) !== textKey(headline));
+  );
+  const headline =
+    distinctTexts([cluster.representativeTitle, ...articles.map((article) => article.title)])
+      .find((title) => title.length <= 120 && isCompleteSourceText(title)) ??
+    facts.find((fact) => fact.length <= 120)?.replace(/[.!?。]+$/u, "") ??
+    `${categoryLabel(category, context)} 소식`;
+  const groundedFacts = facts.filter((text) => textKey(text) !== textKey(headline));
   const oneLine = boundedText(
-    facts[0] ?? "관련 보도가 나왔으며 구체적인 내용은 후속 보도로 확인해야 합니다.",
+    groundedFacts[0] ?? `${headline}에 관한 소식이 전해졌습니다.`,
     180,
-    "관련 보도가 나왔으며 구체적인 내용은 후속 보도로 확인해야 합니다.",
+    `${headline}에 관한 소식이 전해졌습니다.`,
   );
-  const remainingFacts = facts.filter((text) => textKey(text) !== textKey(oneLine));
+  const remainingFacts = groundedFacts.filter((text) => textKey(text) !== textKey(oneLine));
   const overview = boundedText(
-    remainingFacts[0] ?? `${headline}와 관련한 보도가 나왔습니다. 구체적인 범위와 결과는 후속 보도로 확인해야 합니다.`,
+    remainingFacts[0] ?? oneLine,
     1200,
-    headline,
+    oneLine,
   );
-  const keyPoints = distinctTexts(remainingFacts.slice(1)).slice(0, 3);
-  const verificationPoints = [
-    "현재 확인된 사실은 기사 제목과 공개된 보도 내용의 범위로 제한됩니다.",
-    "구체적인 적용 범위와 실제 결과는 후속 보도로 확인해야 합니다.",
+  const keyPoints = distinctTexts(remainingFacts.slice(1, 3));
+  const groundedBackupPoints = [
+    `기사에서 확인되는 핵심 내용은 “${oneLine}”입니다.`,
+    `또 다른 핵심은 “${overview}”입니다.`,
+    `보도된 사건은 “${headline}”입니다.`,
+    `기사에 담긴 설명은 “${oneLine}”입니다.`,
   ];
-  for (const point of verificationPoints) {
+  for (const point of groundedBackupPoints) {
     if (keyPoints.length >= 2) break;
-    if (!keyPoints.some((existing) => textKey(existing) === textKey(point))) keyPoints.push(point);
+    if (!keyPoints.some((existing) => textKey(existing) === textKey(point))) {
+      keyPoints.push(point);
+    }
   }
-  const analogyFact = remainingFacts.find(
-    (fact) => !keyPoints.some((point) => textKey(point) === textKey(fact)),
-  );
+  const analogyFact = remainingFacts[3] ?? oneLine;
   const analogy = analogyFact
-    ? `쉽게 말해, ${boundedText(analogyFact, 470, "보도된 내용과 실제로 나타난 결과는 구분해서 봐야 합니다.")}`
-    : "쉽게 말해, 보도된 발표와 실제로 나타난 결과는 구분해서 봐야 합니다.";
+    ? `쉽게 말해, ${boundedText(analogyFact, 470, oneLine)}`
+    : oneLine;
+  const whyItMatters = boundedText(
+    remainingFacts[4] ??
+      `${headline} 보도에서 눈여겨볼 구체적인 내용은 “${remainingFacts[0] ?? oneLine}”입니다.`,
+    800,
+    oneLine,
+  );
+  const questionContext = remainingFacts[4] ?? overview;
+  const specificQuestion = `${questionContext} 그렇다면 ${headline}의 다음 단계는 무엇일까요?`;
+  const socraticQuestion = specificQuestion.length <= 300
+    ? specificQuestion
+    : `${headline}의 다음 단계는 무엇일까요?`;
 
   return DigestItemSchema.parse({
     id: createHash("sha256")
@@ -258,18 +303,11 @@ export function createFallbackDigestItem(
     oneLine,
     overview,
     keyPoints: keyPoints.map((point, index) =>
-      boundedText(point, 240, verificationPoints[index % verificationPoints.length]!),
+      boundedText(point, 240, index === 0 ? oneLine : overview),
     ),
     analogy: boundedText(analogy, 500, headline),
-    whyItMatters:
-      context?.preset.explanation.usefulWhy ??
-      FALLBACK_WHY_IT_MATTERS[category] ??
-      "이 변화가 독자에게 실제로 어떤 선택과 조건을 바꾸는지 후속 근거를 확인할 필요가 있습니다.",
-    socraticQuestion: boundedText(
-      `“${oneLine}” 상황에서 실제 영향을 먼저 받는 사람이나 조직은 누구일까요? 카드의 어떤 사실이 그 판단을 뒷받침하나요?`,
-      300,
-      `“${headline}”의 실제 영향을 판단할 때 카드에서 어떤 사실을 근거로 삼을 수 있을까요?`,
-    ),
+    whyItMatters,
+    socraticQuestion,
     factStatus: "reported",
     confidence: cluster.sourceCount >= 2 ? 0.65 : 0.5,
     sourceIds: selectPromptArticles(cluster).map((article) => article.id),
@@ -298,9 +336,9 @@ ${presetPolicy}
 
 고등학교 상위권 학생부터 대학 교양 입문자가 쉽게 읽되 내용은 얕지 않은 차분한 한국어로 쓰세요. "중요하다"거나 "경쟁력이 높아진다"는 결론만 쓰지 말고, 입력 출처에 근거가 있을 때 왜 그런지 작동 구조를 1~2단계 설명하세요. 숫자·기간·제도·이해관계자·비용·공급망·기술적 제약·정책 조건이 기사에 있다면 우선 활용하되 없는 정보는 만들지 마세요.
 
-overview는 무슨 일이 있었는지와 그 의미가 생기는 구조를 함께 설명하세요. keyPoints는 overview를 반복하지 말고 결정/사실, 작동 조건, 다음 확인 변수처럼 서로 다른 역할을 갖게 하세요. 필요한 전문용어 1~2개는 처음에 짧게 뜻을 붙일 수 있습니다. analogy는 억지 비유 대신 실제 구조를 쉬운 말로 다시 설명해도 됩니다. whyItMatters는 실제 관련된 개인·기업·정부·시장·과학기술 주체 중 누구의 무엇이 달라질 수 있는지 구체화하세요. 각 필드에서 같은 문장을 반복하거나 길이 한도에 맞추려고 문장을 중간에서 자르지 마세요.
+overview는 실제 발생 사실과 맥락, keyPoints는 서로 다른 핵심 사실, analogy는 어려운 구조의 쉬운 설명, whyItMatters는 이 사건이 바꾸는 구체적인 행동·조건을 맡습니다. 각 영역이 같은 말을 바꿔 쓰지 않게 하세요. 구체적 근거가 부족하면 범용 안전문구로 채우지 말고 짧게 쓰세요. "기술 변화는", "연구 결과는", "확인할 필요가 있습니다"처럼 다른 사건에도 붙는 category 문장보다 입력의 사람·기관·장소·기간·제도를 사용하세요. 문장을 길이 한도에 맞추려고 중간에서 자르지 마세요.
 
-socraticQuestion은 현재 카드만 읽어도 생각을 시작할 수 있도록 질문 안에 핵심 사실이나 상황을 짧게 포함하세요. 선택의 득실, 각 주체의 행동 동기, 뒤따를 영향, 실제 변화 여부 중 하나를 구체적으로 묻되 trade-off, incentive, second-order effect, verification 같은 영어 메타어를 질문에 그대로 쓰지 마세요. 추가 검색이 필요한 논술 문제가 아니라 카드의 사실을 근거로 답할 수 있는 한두 문장 질문이어야 합니다.
+socraticQuestion은 현재 카드만 읽어도 생각을 시작할 수 있도록 질문 안에 이 사건의 고유 명사나 구체적인 변화 하나를 포함하세요. 선택의 득실, 각 주체의 행동 동기, 뒤따를 영향, 실제 변화 여부 같은 사고법은 내부에서만 사용하고 이름을 번역한 질문 틀로 노출하지 마세요. "누구에게 영향을 줄까요?", "비용과 이익은 누구에게 다를까요?", "카드의 어떤 사실이 근거인가요?"처럼 어떤 기사에도 붙는 질문을 쓰지 마세요. 추가 검색이 필요한 논술 문제가 아니라 이 카드의 사실에서 자연스럽게 이어지는 한 문장 질문이어야 합니다.
 
 사실·주장·전망을 구분하고, 정치적 편향 표현을 피하세요. 과학의 초기 연구·경제 전망·기업 발표는 확정 사실처럼 쓰지 마세요. 같은 분량에서 정보 밀도를 높이고 기존 schema 길이 한도를 지키세요.
 
@@ -345,7 +383,7 @@ function validateGrounding(
       if (source.clusterId !== item.clusterId) throw new Error("다른 사건의 source ID입니다.");
     }
 
-    return DigestItemSchema.parse({
+    const digestItem = DigestItemSchema.parse({
       ...item,
       id: createHash("sha256")
         .update(`${"presetId" in candidates[0]! ? candidates[0].presetId : "legacy"}:${candidates[0]?.targetDate}:${item.clusterId}`)
@@ -355,6 +393,8 @@ function validateGrounding(
       rank: index + 1,
       sourceIds: uniqueSourceIds.map((sourceId) => sourceById.get(sourceId)!.articleId),
     });
+    assertEditorialQuality(digestItem);
+    return digestItem;
   });
 }
 
@@ -380,10 +420,8 @@ class FixtureSummaryGenerator implements StructuredGenerator {
             descriptions[1] ?? "후속 적용과 검증 과정이 남아 있습니다.",
           ],
           analogy: "쉽게 말해, 발표된 일정이나 지원 내용과 실제로 이행된 결과는 구분해서 봐야 합니다.",
-          whyItMatters: this.context?.preset.explanation.usefulWhy ?? "이 변화가 실제 선택과 이용 조건을 어떻게 바꾸는지 확인할 필요가 있습니다.",
-          socraticQuestion: this.context
-            ? `${this.context.preset.displayName} 독자에게 실제 변화가 생겼다고 판단하려면 어떤 후속 사실을 확인해야 할까요?`
-            : "이 변화가 실제로 일어났다고 판단하려면 어떤 후속 사실을 확인해야 할까요?",
+          whyItMatters: descriptions[1] ?? descriptions[0] ?? cluster.representativeTitle,
+          socraticQuestion: `“${cluster.representativeTitle}”의 다음 단계에서 가장 먼저 확인할 변화는 무엇일까요?`,
           factStatus: "reported",
           confidence: cluster.sourceCount >= 2 ? 0.86 : 0.68,
           sourceIds: clusterSources.slice(0, Math.max(1, Math.min(3, clusterSources.length))).map((source) => source.id),

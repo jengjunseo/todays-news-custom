@@ -95,8 +95,8 @@ describe("AI selection and grounded explanation", () => {
     ]);
     expect(prompts[1]).toBe(prompts[0]);
     expect(prompts[0]).toContain("작동 구조를 1~2단계 설명하세요");
-    expect(prompts[0]).toContain("현재 카드만 읽어도 생각을 시작할 수 있도록");
-    expect(prompts[0]).toContain("영어 메타어를 질문에 그대로 쓰지 마세요");
+    expect(prompts[0]).toContain("사고법은 내부에서만 사용");
+    expect(prompts[0]).toContain("어떤 기사에도 붙는 질문을 쓰지 마세요");
   });
 
   it("accepts a valid schema and assigns category rank", async () => {
@@ -202,7 +202,7 @@ describe("AI selection and grounded explanation", () => {
     expect(item.whyItMatters).not.toContain("9개 출처");
     expect(new Set(normalized).size).toBe(normalized.length);
     expect(fields.every((value) => !value.endsWith("밝혔"))).toBe(true);
-    expect(item.socraticQuestion).toContain(item.oneLine);
+    expect(item.socraticQuestion).toContain(item.headline);
     expect(item.socraticQuestion).not.toMatch(/trade-off|incentive|second-order effect|verification/i);
   });
 
@@ -232,5 +232,57 @@ describe("AI selection and grounded explanation", () => {
     expect(new Set(normalized).size).toBe(normalized.length);
     expect(item.oneLine).toBe("회사는 다음 달 시범 사업을 시작한다고 밝혔다.");
     expect(item.overview).toBe("적용 대상은 두 지역으로 제한된다.");
+  });
+
+  it("uses source-specific fallback prose without category boilerplate or meta questions", () => {
+    const candidate = cluster("fallback-editorial");
+    candidate.representativeTitle = "원주시, 심야버스 두 노선 시범 운행";
+    candidate.articles = [
+      {
+        ...candidate.articles[0]!,
+        id: "editorial-a".padEnd(32, "0"),
+        title: candidate.representativeTitle,
+        description: "원주시는 다음 달부터 심야버스 두 노선을 시범 운행한다. 운행 시간은 자정부터 오전 2시까지다. 단계동과 혁신도시를 각각 출발한다.",
+      },
+      {
+        ...candidate.articles[1]!,
+        id: "editorial-b".padEnd(32, "0"),
+        title: "원주 심야버스 운행 시간과 노선 공개",
+        description: "시범 운행은 석 달 동안 이어진다. 승객 수와 시간대별 이용량을 집계한다. 시는 집계 결과로 정식 운행 여부를 결정한다. 그러면서 주 4.",
+      },
+    ];
+
+    const item = createFallbackDigestItem("society", candidate);
+    const visible = [
+      item.oneLine,
+      item.overview,
+      ...item.keyPoints,
+      item.analogy,
+      item.whyItMatters,
+      item.socraticQuestion,
+    ].join(" ");
+
+    expect(visible).toContain("원주시");
+    expect(visible).toContain("심야버스");
+    expect(visible).not.toMatch(/사회 제도는|후속 결과가 중요|실제 영향을 먼저 받는|카드의 어떤 사실|그러면서 주 4/);
+    expect(item.socraticQuestion).toContain("원주시, 심야버스 두 노선 시범 운행");
+    expect(new Set([item.overview, ...item.keyPoints, item.whyItMatters]).size).toBe(4);
+  });
+
+  it("corrects an event-agnostic thought question while preserving grounding", async () => {
+    const generic = {
+      ...validItem("cluster-1"),
+      socraticQuestion: "비용과 이익은 누구에게 다를까요?",
+    };
+    const specific = validItem("cluster-1");
+    const generator = mockGenerator([
+      { items: [generic] },
+      { items: [specific] },
+    ]);
+
+    const result = await summarizeStory("economy", [cluster("cluster-1")], generator);
+
+    expect(result[0]?.socraticQuestion).toBe(specific.socraticQuestion);
+    expect(generator.generate).toHaveBeenCalledTimes(2);
   });
 });

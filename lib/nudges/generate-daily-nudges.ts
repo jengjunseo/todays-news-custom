@@ -119,40 +119,37 @@ function withPrimarySourceIds(
 }
 
 function fixtureOutput(items: DigestItem[]) {
-  const primary = items[0]!;
-  const secondCategory = items.find((item) => item.category !== primary.category);
+  const morningItem = items[0]!;
+  const perspectiveItem = items.find((item) => item.id !== morningItem.id) ?? morningItem;
+  const eveningItem = items.find(
+    (item) => item.id !== morningItem.id && item.id !== perspectiveItem.id,
+  ) ?? morningItem;
   return {
     morning: {
       title: BRAND.name,
-      notificationBody: primary.oneLine,
-      insightBody: `${primary.headline}. 중요한 건 발표 자체보다 ${primary.whyItMatters}`,
-      question: primary.socraticQuestion,
-      primaryItemId: primary.id,
-      sourceIds: primary.sourceIds.slice(0, 2),
+      notificationBody: morningItem.oneLine,
+      insightBody: morningItem.overview,
+      question: morningItem.socraticQuestion,
+      primaryItemId: morningItem.id,
+      sourceIds: morningItem.sourceIds.slice(0, 2),
     },
     perspective: {
       title: "점심 생각거리",
-      notificationBody: `${primary.headline}의 비용과 이익은 누구에게 다를까요?`,
-      insightBody: `${primary.overview} 이 변화가 주는 이익과 감수해야 할 비용을 함께 비교해 볼 필요가 있습니다.`,
-      question: primary.socraticQuestion,
-      primaryItemId: primary.id,
-      sourceIds: primary.sourceIds.slice(0, 2),
-      perspectiveType: "trade_off" as const,
+      notificationBody: perspectiveItem.headline,
+      insightBody: perspectiveItem.whyItMatters,
+      question: perspectiveItem.socraticQuestion,
+      primaryItemId: perspectiveItem.id,
+      sourceIds: perspectiveItem.sourceIds.slice(0, 2),
+      perspectiveType: "stakeholder" as const,
     },
     evening: {
       title: "오늘의 연결",
-      notificationBody: secondCategory
-        ? `${primary.headline}과 ${secondCategory.headline}은 어디에서 만날까요?`
-        : `${primary.headline}이 오래 남길 변화는 무엇일까요?`,
-      insightBody: secondCategory
-        ? `${primary.headline}과 ${secondCategory.headline}은 다른 분야처럼 보이지만, 사람의 선택과 사회의 자원 배분을 함께 바꾼다는 점에서 연결됩니다.`
-        : `${primary.headline}의 단기 결과보다 제도와 선택에 남길 장기 영향을 살펴봅니다.`,
-      question: secondCategory
-        ? "두 변화가 동시에 진행될 때 가장 먼저 생길 병목은 무엇일까요?"
-        : primary.socraticQuestion,
-      primaryItemId: primary.id,
-      secondaryItemId: secondCategory?.id ?? null,
-      sourceIds: primary.sourceIds.slice(0, 2),
+      notificationBody: eveningItem.headline,
+      insightBody: eveningItem.whyItMatters,
+      question: eveningItem.socraticQuestion,
+      primaryItemId: eveningItem.id,
+      secondaryItemId: null,
+      sourceIds: eveningItem.sourceIds.slice(0, 2),
     },
   };
 }
@@ -168,8 +165,10 @@ function promptFor(items: DigestItem[]) {
   return `아래 전날 뉴스 digest만 사용해 하루치 알림 3개를 한 번에 만드세요.
 
 Morning: 반드시 알아둘 변화 하나를 정보 중심으로 설명합니다.
-Perspective: 한 사건을 trade_off, second_order, counterfactual, stakeholder, assumption, scale 중 한 사고법으로 다시 봅니다.
-Evening: 가능하면 서로 다른 분야 두 사건을 유의미하게 연결하고, 억지 연결이면 가장 중요한 사건의 장기 함의를 설명합니다.
+Perspective: Morning과 다른 중요한 사건을 우선하고, 사고법은 내부에서만 선택해 사건에 구체적인 자연스러운 문장으로 씁니다.
+Evening: 실제 근거로 설명할 수 있을 때만 두 사건을 연결합니다. 억지 연결이라면 아직 다루지 않은 사건 하나의 구체적인 다음 변화를 설명합니다.
+
+여러 item이 있으면 Morning과 Perspective의 primaryItemId를 다르게 고르세요. 세 알림이 같은 질문이나 문장을 반복하지 않게 하세요. trade-off, stakeholder 같은 사고법 이름이나 "비용과 이익은 누구에게 다를까요?" 같은 범용 질문 틀을 사용자 문장에 노출하지 마세요.
 
 강압, FOMO, 긴급 표현, 읽지 않았다는 압박을 쓰지 마세요. 아래 item ID와 각 item의 source ID만 참조하세요.
 

@@ -27,4 +27,17 @@ describe("production setup diagnostics", () => {
     expect(diagnostics.ai).toBe("설정됨");
     expect(JSON.stringify(diagnostics)).not.toContain("do-not-expose");
   });
+
+  it("recognizes Gemini authentication", async () => {
+    vi.stubEnv("DEMO_MODE", "false");
+    vi.stubEnv("AI_PROVIDER", "gemini");
+    vi.stubEnv("AI_MODEL", "gemini-3.5-flash");
+    vi.stubEnv("GOOGLE_GENERATIVE_AI_API_KEY", "do-not-expose-google-secret");
+    vi.stubEnv("VERCEL", "1");
+
+    const diagnostics = await getSetupDiagnostics();
+
+    expect(diagnostics.ai).toBe("설정됨");
+    expect(JSON.stringify(diagnostics)).not.toContain("do-not-expose");
+  });
 });

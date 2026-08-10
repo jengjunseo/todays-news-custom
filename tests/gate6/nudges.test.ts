@@ -71,12 +71,24 @@ describe("three daily nudges", () => {
     vi.unstubAllEnvs();
   });
 
+  it("gives morning, perspective and evening distinct events when three exist", async () => {
+    const threeItems = [...items, item("item-3", "society", ["S5", "S6"])];
+
+    const result = await generateDailyNudges({ sourceDate: "2026-08-01", items: threeItems });
+
+    expect(new Set(result.map((nudge) => nudge.primaryItemId)).size).toBe(3);
+    expect(new Set(result.map((nudge) => nudge.notificationBody)).size).toBe(3);
+    expect(JSON.stringify(result)).not.toMatch(/비용과 이익은 누구에게 다를까요|사람의 선택과 사회의 자원 배분/);
+  });
+
   it("creates morning, perspective and evening in one call", async () => {
     const mock = generator([output()]);
     const result = await generateDailyNudges({ sourceDate: "2026-08-01", items }, mock);
     expect(result.map((nudge) => nudge.type)).toEqual(["morning", "perspective", "evening"]);
     expect(mock.generate).toHaveBeenCalledTimes(1);
     expect(result[2]?.secondaryItemId).toBe("item-2");
+    expect(mock.generate.mock.calls[0]?.[0].prompt).toContain("사고법은 내부에서만 선택");
+    expect(mock.generate.mock.calls[0]?.[0].prompt).toContain("같은 질문이나 문장을 반복하지 않게");
   });
 
   it("uses the primary item source IDs without a correction call", async () => {

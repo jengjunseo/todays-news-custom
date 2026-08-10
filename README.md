@@ -52,7 +52,9 @@ Reading time:
 - `DEMO_MODE=true`: fixture discovery와 deterministic editorial output
 - `DISCOVERY_PROVIDER=fixture|naver`: 현재 discovery provider 선택
 - `NAVER_API_HUB_CLIENT_ID`, `NAVER_API_HUB_CLIENT_SECRET`: live NAVER discovery
-- `AI_MODEL`, `OPENROUTER_API_KEY`: live grounded editorial generation
+- `AI_PROVIDER=openrouter|gemini`: editorial provider 선택. 생략하면 기존과 같이 OpenRouter
+- `AI_MODEL`: 선택한 provider의 모델 ID
+- `OPENROUTER_API_KEY`, `GOOGLE_GENERATIVE_AI_API_KEY`: 선택한 provider의 인증 키
 - `DATABASE_URL`: pipeline publish/read용 direct Postgres 연결
 - `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`: read/reflection/settings 서버 API
 - `APP_PASSWORD`, `AUTH_SECRET`, `CRON_SECRET`: 개인 접근과 scheduler 인증
