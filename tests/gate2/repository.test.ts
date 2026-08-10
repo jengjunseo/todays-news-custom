@@ -1,56 +1,40 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { describe, expect, it } from "vitest";
 
 import { DigestRepository } from "@/lib/db/repositories/digest-repository";
+import { createPgMemSql, createSchemaDatabase } from "@/tests/helpers/pg-mem";
 
-function fakeClient(data: unknown) {
-  const calls: Array<[string, unknown]> = [];
-  const builder = {
-    select(value: string) {
-      calls.push(["select", value]);
-      return this;
-    },
-    eq(column: string, value: unknown) {
-      calls.push([`eq:${column}`, value]);
-      return this;
-    },
-    order(column: string, options: unknown) {
-      calls.push([`order:${column}`, options]);
-      return Promise.resolve({ data, error: null });
-    },
-    maybeSingle() {
-      calls.push(["maybeSingle", true]);
-      return Promise.resolve({ data, error: null });
-    },
-  };
-  return {
-    calls,
-    client: { from: () => builder } as unknown as SupabaseClient,
-  };
-}
+describe("direct PostgreSQL digest repository", () => {
+  it("returns only the published digest for the requested preset and date", async () => {
+    const database = createSchemaDatabase();
+    database.public.none(`
+      insert into daily_digests (preset_id, preset_name, source_date, status)
+      values ('wonju', '원주', '2026-08-01', 'published');
+      insert into daily_digests (preset_id, preset_name, source_date, status)
+      values ('girls-band-cry', '걸즈 밴드 크라이', '2026-08-01', 'published');
+    `);
+    const repository = new DigestRepository(createPgMemSql(database));
 
-describe("digest repository", () => {
-  it("only returns a published digest for the requested date", async () => {
-    const row = {
-      id: "digest-1",
+    const result = await repository.findPublishedByDate("wonju", "2026-08-01");
+
+    expect(result).toEqual(expect.objectContaining({
+      preset_id: "wonju",
       source_date: "2026-08-01",
       status: "published",
-      item_count: 5,
-      reading_minutes: 8,
-      generated_at: null,
-      published_at: null,
-    };
-    const { client, calls } = fakeClient(row);
-    const result = await new DigestRepository(client).findPublishedByDate("2026-08-01");
-    expect(result).toEqual(row);
-    expect(calls).toContainEqual(["eq:source_date", "2026-08-01"]);
-    expect(calls).toContainEqual(["eq:status", "published"]);
+    }));
   });
 
   it("lists published digests newest first", async () => {
-    const { client, calls } = fakeClient([]);
-    await new DigestRepository(client).listPublished();
-    expect(calls).toContainEqual(["eq:status", "published"]);
-    expect(calls).toContainEqual(["order:source_date", { ascending: false }]);
+    const database = createSchemaDatabase();
+    database.public.none(`
+      insert into daily_digests (preset_id, preset_name, source_date, status)
+      values ('wonju', '원주', '2026-07-31', 'published');
+      insert into daily_digests (preset_id, preset_name, source_date, status)
+      values ('wonju', '원주', '2026-08-01', 'published');
+    `);
+    const repository = new DigestRepository(createPgMemSql(database));
+
+    const result = await repository.listPublished("wonju");
+
+    expect(result.map((row) => row.source_date)).toEqual(["2026-08-01", "2026-07-31"]);
   });
 });

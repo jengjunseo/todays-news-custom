@@ -15,7 +15,7 @@ export async function getSetupDiagnostics(): Promise<SetupDiagnostics> {
   const startedAt = Date.now();
   if (isDemoMode()) {
     const diagnostics = {
-      database: "데모 저장소",
+      database: "로컬 데모 저장소",
       newsApi: "데모 fixture",
       ai: "데모 출력",
       push: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ? "VAPID 설정됨" : "VAPID 안됨",
@@ -27,7 +27,7 @@ export async function getSetupDiagnostics(): Promise<SetupDiagnostics> {
   }
 
   const base: SetupDiagnostics = {
-    database: process.env.DATABASE_URL ? "확인 중" : "설정 안됨",
+    database: process.env.DATABASE_URL ? "PostgreSQL 확인 중" : "PostgreSQL 미설정",
     newsApi:
       process.env.NAVER_API_HUB_CLIENT_ID && process.env.NAVER_API_HUB_CLIENT_SECRET
         ? "설정됨"
@@ -62,7 +62,7 @@ export async function getSetupDiagnostics(): Promise<SetupDiagnostics> {
     ]);
     const diagnostics = {
       ...base,
-      database: "정상",
+      database: "PostgreSQL 연결됨",
       push: subscriptions[0]?.count ? "구독됨" : "구독 안됨",
       scheduler: runs[0]
         ? `${runs[0].status} · ${runs[0].completedAt ?? "실행 중"}`
@@ -73,6 +73,6 @@ export async function getSetupDiagnostics(): Promise<SetupDiagnostics> {
     return diagnostics;
   } catch {
     console.log(JSON.stringify({ stage: "settings_diagnostics_total_ms", elapsedMs: Date.now() - startedAt, rowCount: 0 }));
-    return { ...base, database: "연결 오류", push: "확인 불가" };
+    return { ...base, database: "PostgreSQL 연결 오류", push: "확인 불가" };
   }
 }

@@ -1,4 +1,5 @@
-create extension if not exists pgcrypto;
+-- Canonical provider-neutral PostgreSQL schema.
+-- PostgreSQL 13+ provides gen_random_uuid() without a separate extension.
 
 create table source_articles (
   id text primary key,
@@ -161,19 +162,3 @@ create index story_clusters_preset_date_section_score_idx on story_clusters (pre
 create index daily_digests_preset_published_idx on daily_digests (preset_id, source_date desc) where status = 'published';
 create index daily_nudges_due_idx on daily_nudges (status, scheduled_for);
 create index push_subscriptions_active_idx on push_subscriptions (revoked_at) where revoked_at is null;
-
--- These tables are server-only. RLS remains enabled as defense in depth and no
--- anon/authenticated policies are created. Direct Postgres/service_role access
--- is granted separately in 202608020003_service_role_api_grants.sql.
-alter table source_articles enable row level security;
-alter table story_clusters enable row level security;
-alter table cluster_articles enable row level security;
-alter table daily_digests enable row level security;
-alter table digest_items enable row level security;
-alter table daily_nudges enable row level security;
-alter table reflections enable row level security;
-alter table read_states enable row level security;
-alter table notification_settings enable row level security;
-alter table push_subscriptions enable row level security;
-alter table push_deliveries enable row level security;
-alter table pipeline_runs enable row level security;

@@ -15,7 +15,6 @@
   "dependencies": {
     "@ai-sdk/google": "^4.0.31",
     "@openrouter/ai-sdk-provider": "3.0.0",
-    "@supabase/supabase-js": "^2.111.0",
     "ai": "^7.0.47",
     "next": "16.2.12",
     "postgres": "^3.4.9",

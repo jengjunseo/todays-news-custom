@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 
-import { DEFAULT_NOTIFICATION_SETTINGS } from "@/lib/db/repositories/notification-settings-repository";
 import { PushSettings } from "@/components/push-settings";
 import type { SetupDiagnostics } from "@/lib/diagnostics/setup";
+import { DEFAULT_NOTIFICATION_SETTINGS } from "@/lib/settings/notification-settings";
 
 type Theme = "system" | "light" | "dark";
 type Settings = {
