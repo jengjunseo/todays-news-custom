@@ -88,3 +88,17 @@ describe("production AI setup diagnostics", () => {
     expect(JSON.stringify(diagnostics)).not.toContain("do-not-expose");
   });
 });
+
+describe("production discovery setup diagnostics", () => {
+  it("reports Naver, Exa, and direct official routes without exposing credentials", async () => {
+    vi.stubEnv("DATABASE_URL", "");
+    vi.stubEnv("NAVER_API_HUB_CLIENT_ID", "do-not-expose-naver-id");
+    vi.stubEnv("NAVER_API_HUB_CLIENT_SECRET", "do-not-expose-naver-secret");
+    vi.stubEnv("EXA_API_KEY", "do-not-expose-exa-secret");
+
+    const diagnostics = await getSetupDiagnostics();
+
+    expect(diagnostics.newsApi).toBe("Naver 설정됨 · Exa 설정됨 · Official direct");
+    expect(JSON.stringify(diagnostics)).not.toContain("do-not-expose");
+  });
+});

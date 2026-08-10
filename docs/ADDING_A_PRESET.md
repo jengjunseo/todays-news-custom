@@ -27,8 +27,25 @@
 ## Discovery channel
 
 - `news-search`: 한국 뉴스 검색. 현재 `NaverDiscoveryProvider`가 담당합니다.
-- `web-search`: 다국어 공개 웹 검색. 현재 Gemini Google Search grounding provider가 담당합니다.
-- `official-feed`: 향후 명시적 공식 feed adapter를 위한 계약입니다.
+- `web-search`: 다국어 공개 웹 검색. 현재 Exa Search API의 일반 검색 adapter가 담당합니다.
+- `official-feed`: Preset의 `sourceUrls`에 선언한 공식 목록 URL을 직접 관찰합니다. 검색 URL이나 provider 문법을 넣지 않습니다.
+
+공식 발표 페이지가 있다면 route에 다음처럼 URL을 데이터로 선언합니다.
+
+```ts
+{
+  id: "topic-official-direct",
+  channel: "official-feed",
+  sectionId: "official",
+  intent: "공식 사이트에 직접 게시된 주요 발표",
+  queries: ["Topic official news"],
+  locales: ["ja-JP"],
+  excludeTerms: ["루머"],
+  sourceUrls: ["https://example.com/news/"],
+}
+```
+
+`sourceUrls`는 해당 Preset의 `officialDomains` 안에 있어야 하며, adapter는 날짜가 맞는 실제 detail page만 canonical evidence로 반환합니다. `web-search` route는 `EXA_API_KEY`, `news-search` route는 Naver credential이 필요합니다. Discovery에는 LLM을 사용하지 않습니다.
 
 새로운 source가 정말 필요할 때만 `lib/editorial/providers/`에 `DiscoveryProvider`를 추가하고 canonical `RawEvidenceCandidate`까지만 반환합니다. provider-specific 응답을 normalize/relevance/cluster/editorial/publisher로 새게 하지 않습니다.
 

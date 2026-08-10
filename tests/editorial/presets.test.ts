@@ -39,7 +39,11 @@ describe("preset-driven evidence boundary", () => {
     expect(girlsBandCry.sections.map((section) => section.id)).not.toEqual(
       wonju.sections.map((section) => section.id),
     );
-    expect(girlsBandCry.discovery.every((route) => route.channel === "web-search")).toBe(true);
+    expect(new Set(girlsBandCry.discovery.map((route) => route.channel))).toEqual(
+      new Set(["web-search", "official-feed"]),
+    );
+    expect(girlsBandCry.discovery.find((route) => route.channel === "official-feed")?.sourceUrls)
+      .toEqual(["https://girls-band-cry.com/news/"]);
     expect(wonju.discovery.every((route) => route.channel === "news-search")).toBe(true);
     expect(girlsBandCry.editorial.allowFiller).toBe(false);
     expect(wonju.editorial.allowFiller).toBe(false);
