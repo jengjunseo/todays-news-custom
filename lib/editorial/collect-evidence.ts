@@ -5,6 +5,7 @@ import {
 } from "@/lib/editorial/types";
 import { normalizeEvidence } from "@/lib/editorial/normalize-evidence";
 import { FixtureDiscoveryProvider } from "@/lib/editorial/providers/fixture";
+import { GeminiWebSearchDiscoveryProvider } from "@/lib/editorial/providers/gemini-web-search";
 import { NaverDiscoveryProvider } from "@/lib/editorial/providers/naver";
 import { scoreEvidenceRelevance } from "@/lib/editorial/relevance";
 import type { NewspaperPreset } from "@/lib/presets/schema";
@@ -14,7 +15,7 @@ export function configuredDiscoveryProviders(): DiscoveryProvider[] {
   if (process.env.DEMO_MODE === "true" || process.env.DISCOVERY_PROVIDER === "fixture") {
     return [new FixtureDiscoveryProvider()];
   }
-  return [new NaverDiscoveryProvider()];
+  return [new NaverDiscoveryProvider(), new GeminiWebSearchDiscoveryProvider()];
 }
 
 function providerForChannel(providers: DiscoveryProvider[], channel: string) {
