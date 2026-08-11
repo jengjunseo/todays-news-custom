@@ -50,6 +50,8 @@
 
 `subjectIdentity`를 쓰는 면에서 검색 query, Exa highlight, 추천/sidebar/boilerplate에만 alias가 등장하는 문서는 거절됩니다. direct official route는 검증된 URL/domain 자체를 identity 근거로 사용합니다.
 
+Exa `web-search`는 각 다국어 `queries`를 그대로 실행 단위로 유지하면서, Preset의 alias·`subjectIdentity`·route `intent`·`excludeTerms`·해당 `locales` 값으로 짧은 의미 검색 의도를 자동 구성합니다. 따라서 새 면을 위해 provider 코드를 수정하거나 긴 SEO식 query를 만들 필요가 없습니다. `locales`는 검색 언어 필터가 아니라 검색 의도의 문맥이며, 결과 언어는 실제 문자 또는 원문 HTML `lang`으로 확인될 때만 기록됩니다.
+
 새로운 source가 정말 필요할 때만 `lib/editorial/providers/`에 `DiscoveryProvider`를 추가하고 canonical `RawEvidenceCandidate`까지만 반환합니다. provider-specific 응답을 normalize/relevance/cluster/editorial/publisher로 새게 하지 않습니다.
 
 의미 있는 사건이 적으면 덜 발행합니다. coverage를 늘리기 위해 relevance나 grounding 기준을 낮추거나 filler를 만들지 않습니다.

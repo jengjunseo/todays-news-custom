@@ -120,7 +120,11 @@ export function extractPrimaryIdentitySurface(input: {
       || structured?.description
       || metaValue(input.html, ["og:description", "twitter:description", "description"]),
   ).slice(0, 800);
-  return { title, lead };
+  const language = input.html
+    .match(/<html\b[^>]*\blang=["']([^"']+)["']/i)?.[1]
+    ?.split("-")[0]
+    ?.toLowerCase();
+  return { title, lead, language: language && /^[a-z]{2,3}$/.test(language) ? language : undefined };
 }
 
 export function extractEvidenceFromHtml(input: {
