@@ -53,6 +53,18 @@ function aliasesForLocale(input: SearchInput, locale: string) {
   return compactValues(ordered.map((alias) => alias.value), MAX_PRIMARY_ALIASES);
 }
 
+export function exaRequiredIdentity(input: SearchInput) {
+  const normalizedQuery = cleanEvidenceText(input.query).toLocaleLowerCase();
+  const identities = [
+    ...input.preset.aliases,
+    ...(input.preset.subjectIdentity?.associatedAliases ?? []),
+  ]
+    .map((identity) => cleanEvidenceText(identity.value))
+    .filter((identity) => identity && identity.split(/\s+/u).length <= 5)
+    .sort((left, right) => right.length - left.length);
+  return identities.find((identity) => normalizedQuery.includes(identity.toLocaleLowerCase()));
+}
+
 export function buildExaSearchRequest(input: SearchInput) {
   const locale = localeForQuery(input);
   const primaryAliases = aliasesForLocale(input, locale);
@@ -81,11 +93,13 @@ export function buildExaSearchRequest(input: SearchInput) {
       ? `Also extract an explicit connection to ${associatedAliases.join(" / ")} when present.`
       : "",
   ].filter(Boolean);
+  const requiredIdentity = exaRequiredIdentity(input);
 
   return {
     query: clauses.join(" "),
     type: "auto" as const,
     numResults: MAX_RESULTS,
+    ...(requiredIdentity ? { includeText: [requiredIdentity] } : {}),
     ...kstRange(input.sourceDate),
     contents: {
       highlights: {

@@ -52,6 +52,7 @@ describe("Exa web-search evidence adapter", () => {
       query: expect.stringContaining(route.intent),
       type: "auto",
       numResults: 8,
+      includeText: ["걸즈 밴드 크라이"],
       startPublishedDate: "2026-07-31T15:00:00.000Z",
       endPublishedDate: "2026-08-01T14:59:59.999Z",
       contents: { highlights: { query: expect.stringContaining(route.intent) } },
@@ -104,6 +105,9 @@ describe("Exa web-search evidence adapter", () => {
     expect(musicJa.query).toContain("トゲナシトゲアリ");
     expect(musicJa.query).toContain("井芹仁菜");
     expect(musicJa.query).toContain(music.intent);
+    expect(musicKo.includeText).toEqual(["걸즈 밴드 크라이"]);
+    expect(musicJa.includeText).toEqual(["トゲナシトゲアリ"]);
+    expect(liveJa.includeText).toEqual(["トゲナシトゲアリ"]);
     expect(liveJa.query).toContain(live.intent);
     expect(liveJa.query).not.toBe(musicJa.query);
     expect(liveJa.contents.highlights.query).toContain(live.intent);
