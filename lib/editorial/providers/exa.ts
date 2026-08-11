@@ -79,23 +79,18 @@ export function buildExaSearchRequest(input: SearchInput) {
   const locale = localeForQuery(input);
   const primaryAliases = aliasesForLocale(input, locale);
   const requiredIdentity = exaRequiredIdentity(input);
-  const subject = requiredIdentity ?? primaryAliases.slice(0, 2).join(" / ");
   const routeTerms = routeTermsForLocale(input, locale);
-  const highlightClauses = [
-    `Extract source passages that directly discuss ${subject}.`,
-    `Prioritize passages about ${cleanEvidenceText(input.route.intent)}.`,
-  ].filter(Boolean);
+  const baseQuery = cleanEvidenceText(input.query);
+  const subjectQuery = requiredIdentity || !primaryAliases[0]
+    ? baseQuery
+    : `${primaryAliases[0]} ${baseQuery}`;
 
   return {
-    query: [cleanEvidenceText(input.query), ...routeTerms].join(" "),
+    query: [subjectQuery, ...routeTerms].join(" "),
     type: "auto" as const,
     numResults: MAX_RESULTS,
     ...kstRange(input.sourceDate),
-    contents: {
-      highlights: {
-        query: highlightClauses.join(" "),
-      },
-    },
+    contents: { highlights: true as const },
   };
 }
 

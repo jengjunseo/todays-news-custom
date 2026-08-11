@@ -54,7 +54,7 @@ describe("Exa web-search evidence adapter", () => {
       numResults: 4,
       startPublishedDate: "2026-07-31T15:00:00.000Z",
       endPublishedDate: "2026-08-01T14:59:59.999Z",
-      contents: { highlights: { query: expect.stringContaining(route.intent) } },
+      contents: { highlights: true },
     });
     const request = JSON.parse(String(options.body));
     expect(request.query).toContain("걸즈 밴드 크라이");
@@ -101,13 +101,12 @@ describe("Exa web-search evidence adapter", () => {
     expect(musicJa.query).toContain("トゲナシトゲアリ");
     expect(musicJa.query).not.toContain("ガールズバンドクライ");
     expect(musicJa.query).not.toContain("井芹仁菜");
-    expect(musicJa.contents.highlights.query).toContain(music.intent);
     expect(musicKo.numResults).toBe(4);
     expect(musicJa.query).toContain("楽曲");
     expect(musicJa.query).toContain("リリース");
     expect(liveJa.query).toContain("公演");
     expect(liveJa.query).not.toBe(musicJa.query);
-    expect(liveJa.contents.highlights.query).toContain(live.intent);
+    expect(liveJa.contents.highlights).toBe(true);
     expect(liveJa).not.toHaveProperty("category");
   });
 
@@ -121,7 +120,7 @@ describe("Exa web-search evidence adapter", () => {
     });
 
     expect(request.query).toContain("井芹仁菜");
-    expect(request.contents.highlights.query).toContain("井芹仁菜");
+    expect(request.contents.highlights).toBe(true);
   });
 
   it("rejects malformed dates and never substitutes an Exa summary", async () => {
@@ -222,8 +221,7 @@ describe("Exa web-search evidence adapter", () => {
     });
 
     expect(searchRequest?.query).toContain("トゲナシトゲアリ");
-    expect((searchRequest?.contents as { highlights?: { query?: string } })?.highlights?.query)
-      .toContain(targetRoute.intent);
+    expect(searchRequest?.contents).toEqual({ highlights: true });
     expect(searchRequest?.query).not.toContain("BIGBANG");
     expect(searchRequest?.query).not.toContain("ILLIT");
     expect(evaluateSubjectIdentity({
