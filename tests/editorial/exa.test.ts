@@ -58,10 +58,9 @@ describe("Exa web-search evidence adapter", () => {
       contents: { highlights: { query: expect.stringContaining(route.intent) } },
     });
     const request = JSON.parse(String(options.body));
-    expect(request.query).toContain("Girls Band Cry");
+    expect(request.query).toContain("Primary subject: 걸즈 밴드 크라이");
     expect(request.query).toContain(route.queries[0]);
     expect(request.query).toContain(route.excludeTerms[0]);
-    expect(request.query).toContain("ko-KR");
     expect(request).not.toHaveProperty("category");
     expect(request).not.toHaveProperty("outputSchema");
     expect(request.contents).not.toHaveProperty("summary");
@@ -98,12 +97,10 @@ describe("Exa web-search evidence adapter", () => {
     });
 
     expect(musicKo.query).toContain(music.queries[0]);
-    expect(musicKo.query).toContain("ko-KR");
     expect(musicJa.query).toContain(music.queries[1]);
-    expect(musicJa.query).toContain("ja-JP");
-    expect(musicJa.query).toContain("ガールズバンドクライ");
     expect(musicJa.query).toContain("トゲナシトゲアリ");
-    expect(musicJa.query).toContain("井芹仁菜");
+    expect(musicJa.query).not.toContain("ガールズバンドクライ");
+    expect(musicJa.query).not.toContain("井芹仁菜");
     expect(musicJa.query).toContain(music.intent);
     expect(musicKo.includeText).toEqual(["걸즈 밴드 크라이"]);
     expect(musicJa.includeText).toEqual(["トゲナシトゲアリ"]);
@@ -112,6 +109,19 @@ describe("Exa web-search evidence adapter", () => {
     expect(liveJa.query).not.toBe(musicJa.query);
     expect(liveJa.contents.highlights.query).toContain(live.intent);
     expect(liveJa).not.toHaveProperty("category");
+  });
+
+  it("can derive an exact constraint from a Preset-owned associated identity", () => {
+    const interview = girlsBandCryPreset.discovery.find((candidate) => candidate.id === "gbc-interview")!;
+    const request = buildExaSearchRequest({
+      preset: girlsBandCryPreset,
+      route: interview,
+      query: "井芹仁菜 インタビュー",
+      sourceDate,
+    });
+
+    expect(request.includeText).toEqual(["井芹仁菜"]);
+    expect(request.query).toContain("Primary subject: 井芹仁菜");
   });
 
   it("rejects malformed dates and never substitutes an Exa summary", async () => {
@@ -211,7 +221,7 @@ describe("Exa web-search evidence adapter", () => {
       sourceDate,
     });
 
-    expect(searchRequest?.query).toContain("ガールズバンドクライ");
+    expect(searchRequest?.query).toContain("Primary subject: トゲナシトゲアリ");
     expect(searchRequest?.query).toContain(targetRoute.intent);
     expect(searchRequest?.query).not.toContain("BIGBANG");
     expect(searchRequest?.query).not.toContain("ILLIT");

@@ -33,14 +33,18 @@ async function runReadOnlyBakeoff() {
     route,
     query: route.queries[1] ?? route.queries[0]!,
   }));
-  const variants = ["baseline", "include-text", "include-text-news"] as const;
+  const variants = ["raw-query", "concise-identity", "concise-identity-news"] as const;
   const rows = [];
   for (const { route, query } of cases) {
     const precise = buildExaSearchRequest({ preset, route, query, sourceDate: "2026-08-10" });
     for (const variant of variants) {
       const body = { ...precise } as Record<string, unknown>;
-      if (variant === "baseline") delete body.includeText;
-      if (variant === "include-text-news") body.category = "news";
+      if (variant === "raw-query") {
+        body.query = query;
+        body.contents = { highlights: true };
+        delete body.includeText;
+      }
+      if (variant === "concise-identity-news") body.category = "news";
       const startedAt = Date.now();
       const response = await fetch("https://api.exa.ai/search", {
         method: "POST",

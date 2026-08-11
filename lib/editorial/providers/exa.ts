@@ -15,7 +15,6 @@ import {
 const EXA_SEARCH_URL = "https://api.exa.ai/search";
 const MAX_RESULTS = 8;
 const MAX_PRIMARY_ALIASES = 4;
-const MAX_ASSOCIATED_ALIASES = 2;
 const MAX_EXCLUDE_TERMS = 4;
 
 const ExaSearchResponseSchema = z.object({
@@ -68,32 +67,21 @@ export function exaRequiredIdentity(input: SearchInput) {
 export function buildExaSearchRequest(input: SearchInput) {
   const locale = localeForQuery(input);
   const primaryAliases = aliasesForLocale(input, locale);
-  const associatedAliases = compactValues(
-    input.preset.subjectIdentity?.associatedAliases.map((alias) => alias.value) ?? [],
-    MAX_ASSOCIATED_ALIASES,
-  );
   const excludeTerms = compactValues(input.route.excludeTerms, MAX_EXCLUDE_TERMS);
-  const subject = primaryAliases.join(" / ");
+  const requiredIdentity = exaRequiredIdentity(input);
+  const subject = requiredIdentity ?? primaryAliases.slice(0, 2).join(" / ");
   const clauses = [
-    `Find a source page whose primary subject is ${subject}.`,
-    `Focus on this route: ${cleanEvidenceText(input.route.intent)}.`,
-    `Use \"${cleanEvidenceText(input.query)}\" as a multilingual search-phrasing hint.`,
-    associatedAliases.length > 0
-      ? `Coverage centered on ${associatedAliases.join(" / ")} is relevant only when explicitly connected to the primary subject.`
-      : "",
+    `Primary subject: ${subject}.`,
+    `Event: ${cleanEvidenceText(input.route.intent)}.`,
+    `Locale-specific phrasing: ${cleanEvidenceText(input.query)}.`,
     excludeTerms.length > 0
-      ? `Do not intentionally seek pages primarily about ${excludeTerms.join(" / ")}.`
+      ? `Exclude pages primarily about ${excludeTerms.join(" / ")}.`
       : "",
-    locale !== "und" ? `Preset locale context: ${locale}.` : "",
   ].filter(Boolean);
   const highlightClauses = [
     `Extract source passages that directly discuss ${subject}.`,
     `Prioritize passages about ${cleanEvidenceText(input.route.intent)}.`,
-    associatedAliases.length > 0
-      ? `Also extract an explicit connection to ${associatedAliases.join(" / ")} when present.`
-      : "",
   ].filter(Boolean);
-  const requiredIdentity = exaRequiredIdentity(input);
 
   return {
     query: clauses.join(" "),
