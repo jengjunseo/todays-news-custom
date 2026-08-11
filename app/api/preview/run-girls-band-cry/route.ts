@@ -33,22 +33,29 @@ async function runReadOnlyBakeoff() {
     route,
     query: route.queries[1] ?? route.queries[0]!,
   }));
-  const variants = ["raw-auto", "locale-section-terms", "locale-section-terms-four"] as const;
+  const variants = ["raw-auto", "locale-section-terms-four", "selected-route-text"] as const;
   const rows = [];
   for (const { route, query } of cases) {
     const precise = buildExaSearchRequest({ preset, route, query, sourceDate: "2026-08-10" });
     for (const variant of variants) {
       const body = { ...precise } as Record<string, unknown>;
-      body.query = query;
-      body.contents = { highlights: true };
-      delete body.includeText;
-      body.numResults = variant === "locale-section-terms-four" ? 4 : 8;
+      if (variant !== "selected-route-text") {
+        body.query = query;
+        body.contents = { highlights: true };
+        delete body.includeText;
+      }
+      body.numResults = variant === "raw-auto" ? 8 : 4;
       if (variant.startsWith("locale-section-terms")) {
         const section = preset.sections.find((candidate) => candidate.id === route.sectionId);
         body.query = [query, ...(section?.relevanceTerms.slice(-2) ?? [])].join(" ");
       }
       if (variant === "locale-section-terms-four") {
         body.numResults = 4;
+      }
+      if (variant === "selected-route-text") {
+        const identity = preset.aliases.find((alias) => query.includes(alias.value));
+        const routeText = identity ? query.replace(identity.value, "").trim() : "";
+        if (routeText) body.includeText = [routeText];
       }
       const startedAt = Date.now();
       const response = await fetch("https://api.exa.ai/search", {
