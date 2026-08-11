@@ -1,6 +1,6 @@
 import { getCurrentDigest } from "@/lib/digest/read-digest";
-import { buildExaSearchRequest } from "@/lib/editorial/providers/exa";
-import { hasTitleSubjectIdentity } from "@/lib/editorial/subject-identity";
+import { buildExaSearchRequest, ExaDiscoveryProvider } from "@/lib/editorial/providers/exa";
+import { evaluateSubjectIdentity, hasTitleSubjectIdentity } from "@/lib/editorial/subject-identity";
 import { getPreset } from "@/lib/presets";
 
 export const runtime = "nodejs";
@@ -42,6 +42,7 @@ async function runReadOnlyBakeoff() {
       body.query = query;
       body.contents = { highlights: true };
       delete body.includeText;
+      body.numResults = variant === "locale-section-terms-four" ? 4 : 8;
       if (variant.startsWith("locale-section-terms")) {
         const section = preset.sections.find((candidate) => candidate.id === route.sectionId);
         body.query = [query, ...(section?.relevanceTerms.slice(-2) ?? [])].join(" ");
@@ -76,13 +77,36 @@ async function runReadOnlyBakeoff() {
   return rows;
 }
 
+async function runReadOnlyProviderProbe() {
+  const preset = getPreset("girls-band-cry");
+  if (!preset) throw new Error("Girls Band Cry preset missing");
+  const provider = new ExaDiscoveryProvider();
+  const routes = preset.discovery.filter((route) => ["gbc-music", "gbc-live"].includes(route.id));
+  const rows = [];
+  for (const route of routes) {
+    const query = route.queries[1] ?? route.queries[0]!;
+    const startedAt = Date.now();
+    const candidates = await provider.search({ preset, route, query, sourceDate: "2026-08-10" });
+    rows.push({
+      routeId: route.id,
+      elapsedMs: Date.now() - startedAt,
+      candidates: candidates.map((candidate) => ({
+        title: candidate.title,
+        domain: new URL(candidate.url).hostname.replace(/^www\./, ""),
+        identity: evaluateSubjectIdentity({ candidate, preset, route, provider: provider.name }),
+      })),
+    });
+  }
+  return rows;
+}
+
 export async function GET(request: Request) {
   if (!previewOnly()) return new Response("Not found", { status: 404 });
   if (new URL(request.url).searchParams.get("output") === "digest") {
     return Response.json({ digest: await getCurrentDigest("girls-band-cry") });
   }
   return new Response(
-    `<!doctype html><html lang="ko"><meta name="viewport" content="width=device-width"><title>GBC Preview Verification</title><body><main><h1>GBC Preview Verification</h1><p><a href="?output=digest">Inspect current published digest</a></p><form method="post"><button name="action" value="bakeoff" type="submit">Run read-only Exa bake-off</button></form></main></body></html>`,
+    `<!doctype html><html lang="ko"><meta name="viewport" content="width=device-width"><title>GBC Preview Verification</title><body><main><h1>GBC Preview Verification</h1><p><a href="?output=digest">Inspect current published digest</a></p><form method="post"><button name="action" value="bakeoff" type="submit">Run read-only Exa bake-off</button><button name="action" value="probe" type="submit">Run selected provider probe</button></form></main></body></html>`,
     { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } },
   );
 }
@@ -90,21 +114,24 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   if (!previewOnly()) return new Response("Not found", { status: 404 });
   const formData = await request.formData();
-  if (formData.get("action") !== "bakeoff") return new Response("Bad request", { status: 400 });
+  const action = formData.get("action");
+  if (action !== "bakeoff" && action !== "probe") return new Response("Bad request", { status: 400 });
   const startedAt = Date.now();
-  console.log(JSON.stringify({ stage: "preview_exa_bakeoff_started", presetId: "girls-band-cry" }));
+  console.log(JSON.stringify({ stage: `preview_exa_${action}_started`, presetId: "girls-band-cry" }));
   try {
-    const rows = await runReadOnlyBakeoff();
+    const rows = action === "bakeoff" ? await runReadOnlyBakeoff() : await runReadOnlyProviderProbe();
     console.log(JSON.stringify({
-      stage: "preview_exa_bakeoff_completed",
+      stage: `preview_exa_${action}_completed`,
       presetId: "girls-band-cry",
       elapsedMs: Date.now() - startedAt,
-      rows: rows.map(({ results, ...row }) => row),
+      rows: rows.map((row) => "results" in row
+        ? { ...row, results: undefined }
+        : { routeId: row.routeId, elapsedMs: row.elapsedMs, candidateCount: row.candidates.length }),
     }));
     return Response.json({ sourceDate: "2026-08-10", rows });
   } catch (error) {
     console.error(JSON.stringify({
-      stage: "preview_exa_bakeoff_failed",
+      stage: `preview_exa_${action}_failed`,
       presetId: "girls-band-cry",
       errorType: error instanceof Error ? error.name : typeof error,
       elapsedMs: Date.now() - startedAt,

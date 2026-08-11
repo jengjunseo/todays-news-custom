@@ -13,9 +13,8 @@ import {
 } from "@/lib/editorial/types";
 
 const EXA_SEARCH_URL = "https://api.exa.ai/search";
-const MAX_RESULTS = 8;
+const MAX_RESULTS = 4;
 const MAX_PRIMARY_ALIASES = 4;
-const MAX_EXCLUDE_TERMS = 4;
 
 const ExaSearchResponseSchema = z.object({
   results: z.array(z.object({
@@ -52,6 +51,18 @@ function aliasesForLocale(input: SearchInput, locale: string) {
   return compactValues(ordered.map((alias) => alias.value), MAX_PRIMARY_ALIASES);
 }
 
+function routeTermsForLocale(input: SearchInput, locale: string) {
+  const language = locale.split("-")[0]?.toLowerCase();
+  const section = input.preset.sections.find((candidate) => candidate.id === input.route.sectionId);
+  const matchesLocale = (value: string) => {
+    if (language === "ko") return /[\uac00-\ud7a3]/u.test(value);
+    if (language === "ja") return /[\u3040-\u30ff\u3400-\u9fff]/u.test(value) && !/[\uac00-\ud7a3]/u.test(value);
+    if (language === "en") return /[a-z]/iu.test(value) && !/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7a3]/u.test(value);
+    return false;
+  };
+  return compactValues(section?.relevanceTerms.filter(matchesLocale) ?? [], 2);
+}
+
 export function exaRequiredIdentity(input: SearchInput) {
   const normalizedQuery = cleanEvidenceText(input.query).toLocaleLowerCase();
   const identities = [
@@ -67,27 +78,18 @@ export function exaRequiredIdentity(input: SearchInput) {
 export function buildExaSearchRequest(input: SearchInput) {
   const locale = localeForQuery(input);
   const primaryAliases = aliasesForLocale(input, locale);
-  const excludeTerms = compactValues(input.route.excludeTerms, MAX_EXCLUDE_TERMS);
   const requiredIdentity = exaRequiredIdentity(input);
   const subject = requiredIdentity ?? primaryAliases.slice(0, 2).join(" / ");
-  const clauses = [
-    `Primary subject: ${subject}.`,
-    `Event: ${cleanEvidenceText(input.route.intent)}.`,
-    `Locale-specific phrasing: ${cleanEvidenceText(input.query)}.`,
-    excludeTerms.length > 0
-      ? `Exclude pages primarily about ${excludeTerms.join(" / ")}.`
-      : "",
-  ].filter(Boolean);
+  const routeTerms = routeTermsForLocale(input, locale);
   const highlightClauses = [
     `Extract source passages that directly discuss ${subject}.`,
     `Prioritize passages about ${cleanEvidenceText(input.route.intent)}.`,
   ].filter(Boolean);
 
   return {
-    query: clauses.join(" "),
+    query: [cleanEvidenceText(input.query), ...routeTerms].join(" "),
     type: "auto" as const,
     numResults: MAX_RESULTS,
-    ...(requiredIdentity ? { includeText: [requiredIdentity] } : {}),
     ...kstRange(input.sourceDate),
     contents: {
       highlights: {
