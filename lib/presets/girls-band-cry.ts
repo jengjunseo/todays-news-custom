@@ -12,6 +12,11 @@ export const girlsBandCryPreset = definePreset({
     { value: "Togenashi Togeari", language: "en" },
     { value: "トゲナシトゲアリ", language: "ja" },
   ],
+  subjectIdentity: {
+    associatedAliases: [
+      { value: "井芹仁菜", language: "ja" },
+    ],
+  },
   officialDomains: ["girls-band-cry.com", "togenashitogeari.com"],
   sections: [
     { id: "music", label: "음악", priority: 10, relevanceTerms: ["신곡", "앨범", "싱글", "음원", "楽曲", "リリース"] },
@@ -21,6 +26,7 @@ export const girlsBandCryPreset = definePreset({
     { id: "creators", label: "제작진·활동", priority: 6, relevanceTerms: ["제작진", "감독", "성우", "스태프", "キャスト", "スタッフ"] },
   ],
   discovery: [
+    { id: "gbc-official-direct", channel: "official-feed", sectionId: "official", intent: "공식 사이트에 직접 게시된 작품과 프로젝트 발표", queries: ["Girls Band Cry official news"], locales: ["ja-JP"], excludeTerms: ["루머", "유출"], sourceUrls: ["https://girls-band-cry.com/news/"] },
     { id: "gbc-music", channel: "web-search", sectionId: "music", intent: "신곡·앨범·음원처럼 실제 음악 활동의 변화", queries: ["걸즈 밴드 크라이 신곡", "トゲナシトゲアリ 新曲"], locales: ["ko-KR", "ja-JP"], excludeTerms: ["재고", "중고", "가사 번역"] },
     { id: "gbc-live", channel: "web-search", sectionId: "live", intent: "확정된 라이브·공연·투어 발표와 주요 결과", queries: ["토게나시 토게아리 라이브", "トゲナシトゲアリ ライブ"], locales: ["ko-KR", "ja-JP"], excludeTerms: ["티켓 양도", "직캠 모음"] },
     { id: "gbc-official", channel: "web-search", sectionId: "official", intent: "작품과 프로젝트의 공식 발표", queries: ["걸즈 밴드 크라이 공식 발표", "ガールズバンドクライ 公式"], locales: ["ko-KR", "ja-JP"], excludeTerms: ["루머", "유출"] },

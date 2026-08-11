@@ -19,6 +19,7 @@
 
 - `id`: URL과 DB에 오래 쓰는 kebab-case stable ID
 - `aliases`: 한국어/영어/현지어 이름과 실제 검색에 필요한 별칭
+- `subjectIdentity`: title/실제 lead에서 주제가 반드시 확인돼야 하는 면만 opt-in합니다. 기존 `aliases`가 primary identity이고, 고유한 캐릭터명처럼 충분히 구체적인 이름만 `associatedAliases`에 둡니다.
 - `sections`: 전문 편집국이 다양하게 보여줄 사건 종류
 - `discovery`: provider 문법이 아닌 channel, intent, query, locale, 제외 의미
 - `editorial`: 중요한 변화, noise, 적정 item 수, filler 허용 여부
@@ -27,8 +28,29 @@
 ## Discovery channel
 
 - `news-search`: 한국 뉴스 검색. 현재 `NaverDiscoveryProvider`가 담당합니다.
-- `web-search`: 다국어 공개 웹 검색. 현재 Gemini Google Search grounding provider가 담당합니다.
-- `official-feed`: 향후 명시적 공식 feed adapter를 위한 계약입니다.
+- `web-search`: 다국어 공개 웹 검색. 현재 Exa Search API의 일반 검색 adapter가 담당합니다.
+- `official-feed`: Preset의 `sourceUrls`에 선언한 공식 목록 URL을 직접 관찰합니다. 검색 URL이나 provider 문법을 넣지 않습니다.
+
+공식 발표 페이지가 있다면 route에 다음처럼 URL을 데이터로 선언합니다.
+
+```ts
+{
+  id: "topic-official-direct",
+  channel: "official-feed",
+  sectionId: "official",
+  intent: "공식 사이트에 직접 게시된 주요 발표",
+  queries: ["Topic official news"],
+  locales: ["ja-JP"],
+  excludeTerms: ["루머"],
+  sourceUrls: ["https://example.com/news/"],
+}
+```
+
+`sourceUrls`는 해당 Preset의 `officialDomains` 안에 있어야 하며, adapter는 날짜가 맞는 실제 detail page만 canonical evidence로 반환합니다. `web-search` route는 `EXA_API_KEY`, `news-search` route는 Naver credential이 필요합니다. Discovery에는 LLM을 사용하지 않습니다.
+
+`subjectIdentity`를 쓰는 면에서 검색 query, Exa highlight, 추천/sidebar/boilerplate에만 alias가 등장하는 문서는 거절됩니다. direct official route는 검증된 URL/domain 자체를 identity 근거로 사용합니다.
+
+Exa `web-search`는 각 다국어 `queries`를 그대로 실행 단위로 유지하면서, Preset의 alias·`subjectIdentity`·route `intent`·`excludeTerms`·해당 `locales` 값으로 짧은 의미 검색 의도를 자동 구성합니다. 따라서 새 면을 위해 provider 코드를 수정하거나 긴 SEO식 query를 만들 필요가 없습니다. `locales`는 검색 언어 필터가 아니라 검색 의도의 문맥이며, 결과 언어는 실제 문자 또는 원문 HTML `lang`으로 확인될 때만 기록됩니다.
 
 새로운 source가 정말 필요할 때만 `lib/editorial/providers/`에 `DiscoveryProvider`를 추가하고 canonical `RawEvidenceCandidate`까지만 반환합니다. provider-specific 응답을 normalize/relevance/cluster/editorial/publisher로 새게 하지 않습니다.
 

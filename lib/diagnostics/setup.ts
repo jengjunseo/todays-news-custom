@@ -28,10 +28,13 @@ export async function getSetupDiagnostics(): Promise<SetupDiagnostics> {
 
   const base: SetupDiagnostics = {
     database: process.env.DATABASE_URL ? "PostgreSQL 확인 중" : "PostgreSQL 미설정",
-    newsApi:
+    newsApi: [
       process.env.NAVER_API_HUB_CLIENT_ID && process.env.NAVER_API_HUB_CLIENT_SECRET
-        ? "설정됨"
-        : "설정 안됨",
+        ? "Naver 설정됨"
+        : "Naver 미설정",
+      process.env.EXA_API_KEY ? "Exa 설정됨" : "Exa 미설정",
+      "Official direct",
+    ].join(" · "),
     ai: isAiRuntimeConfigured() ? "설정됨" : "설정 안됨",
     push:
       process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY

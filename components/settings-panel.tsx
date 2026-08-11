@@ -107,7 +107,7 @@ export function SettingsPanel({
         <h2>설정 진단</h2>
         <dl className="diagnostics-list">
           <Diagnostic label="Database" value={diagnostics.database} />
-          <Diagnostic label="News API" value={diagnostics.newsApi} />
+          <Diagnostic label="Discovery" value={diagnostics.newsApi} />
           <Diagnostic label="AI" value={diagnostics.ai} />
           <Diagnostic label="Push" value={diagnostics.push} />
           <Diagnostic label="Scheduler" value={diagnostics.scheduler} />

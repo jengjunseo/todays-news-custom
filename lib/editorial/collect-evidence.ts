@@ -4,10 +4,12 @@ import {
   type EvidenceDocument,
 } from "@/lib/editorial/types";
 import { normalizeEvidence } from "@/lib/editorial/normalize-evidence";
+import { ExaDiscoveryProvider } from "@/lib/editorial/providers/exa";
 import { FixtureDiscoveryProvider } from "@/lib/editorial/providers/fixture";
-import { GeminiWebSearchDiscoveryProvider } from "@/lib/editorial/providers/gemini-web-search";
 import { NaverDiscoveryProvider } from "@/lib/editorial/providers/naver";
+import { OfficialSourceDiscoveryProvider } from "@/lib/editorial/providers/official-source";
 import { scoreEvidenceRelevance } from "@/lib/editorial/relevance";
+import { evaluateSubjectIdentity } from "@/lib/editorial/subject-identity";
 import type { NewspaperPreset } from "@/lib/presets/schema";
 import { isOnKstDate } from "@/lib/time/kst";
 
@@ -15,7 +17,11 @@ export function configuredDiscoveryProviders(): DiscoveryProvider[] {
   if (process.env.DEMO_MODE === "true" || process.env.DISCOVERY_PROVIDER === "fixture") {
     return [new FixtureDiscoveryProvider()];
   }
-  return [new NaverDiscoveryProvider(), new GeminiWebSearchDiscoveryProvider()];
+  return [
+    new NaverDiscoveryProvider(),
+    new ExaDiscoveryProvider(),
+    new OfficialSourceDiscoveryProvider(),
+  ];
 }
 
 function providerForChannel(providers: DiscoveryProvider[], channel: string) {
@@ -76,9 +82,26 @@ export async function collectPresetEvidence(input: {
   const byUrl = new Map<string, EvidenceDocument>();
   for (const result of results) {
     if (!result) continue;
+    let evidenceCount = 0;
     for (const raw of result.raw) {
       if (!isOnKstDate(raw.publishedAt, input.sourceDate)) continue;
       try {
+        const identity = evaluateSubjectIdentity({
+          candidate: raw,
+          preset: input.preset,
+          route: result.route,
+          provider: result.provider.name,
+        });
+        if (!identity.accepted) {
+          console.log(JSON.stringify({
+            stage: "subject_identity_rejected",
+            presetId: input.preset.id,
+            routeId: result.route.id,
+            provider: result.provider.name,
+            proof: identity.proof,
+          }));
+          continue;
+        }
         const normalized = normalizeEvidence({
           raw,
           preset: input.preset,
@@ -98,6 +121,7 @@ export async function collectPresetEvidence(input: {
         if (!previous || evidence.relevanceScore > previous.relevanceScore) {
           byUrl.set(evidence.canonicalUrl, evidence);
         }
+        evidenceCount += 1;
       } catch (error) {
         console.log(JSON.stringify({
           stage: "evidence_item_rejected",
@@ -107,6 +131,14 @@ export async function collectPresetEvidence(input: {
         }));
       }
     }
+    console.log(JSON.stringify({
+      stage: "discovery_route_completed",
+      presetId: input.preset.id,
+      routeId: result.route.id,
+      provider: result.provider.name,
+      candidateCount: result.raw.length,
+      evidenceCount,
+    }));
   }
 
   return [...byUrl.values()].sort(

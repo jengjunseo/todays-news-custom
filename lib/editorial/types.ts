@@ -13,6 +13,7 @@ export const SourceTypeSchema = z.enum([
 export const RawEvidenceCandidateSchema = z.object({
   title: z.string().min(1),
   excerpt: z.string(),
+  identityLead: z.string().max(800).optional(),
   url: z.string().url(),
   providerUrl: z.string().url().optional(),
   publisher: z.string().min(1).optional(),

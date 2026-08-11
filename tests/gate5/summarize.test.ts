@@ -149,9 +149,12 @@ describe("AI selection and grounded explanation", () => {
       { items: [validItem("invented")] },
       { items: [validItem("invented")] },
     ]);
-    await expect(summarizeStory("economy", [cluster("cluster-1")], generator)).rejects.toThrow(
-      "경제 요약/grounding 실패: 후보 밖 cluster ID입니다.",
-    );
+    await expect(summarizeStory("economy", [cluster("cluster-1")], generator)).rejects.toMatchObject({
+      message: "경제 요약/grounding 실패: 후보 밖 cluster ID입니다.",
+      failureClass: "grounding-validation",
+      firstAiCall: "succeeded",
+      correctionAttempted: true,
+    });
   });
 
   it("rejects duplicate clusters and more than two items", async () => {
@@ -170,9 +173,12 @@ describe("AI selection and grounded explanation", () => {
 
   it("preserves the final error after two invalid responses", async () => {
     const generator = mockGenerator([{ invalid: true }, { invalid: true }]);
-    await expect(summarizeStory("economy", [cluster("cluster-1")], generator)).rejects.toThrow(
-      "경제 요약/grounding 실패",
-    );
+    await expect(summarizeStory("economy", [cluster("cluster-1")], generator)).rejects.toMatchObject({
+      message: expect.stringContaining("경제 요약/grounding 실패"),
+      failureClass: "structured-output",
+      firstAiCall: "succeeded",
+      correctionAttempted: true,
+    });
     expect(generator.generate).toHaveBeenCalledTimes(2);
   });
 

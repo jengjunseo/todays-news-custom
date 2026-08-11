@@ -21,6 +21,22 @@ export const DiscoveryRouteSchema = z.object({
   queries: z.array(z.string().min(1)).min(1),
   locales: z.array(z.string().min(2)).min(1),
   excludeTerms: z.array(z.string().min(1)).default([]),
+  sourceUrls: z.array(z.string().url()).max(8).default([]),
+}).superRefine((route, context) => {
+  if (route.channel === "official-feed" && route.sourceUrls.length === 0) {
+    context.addIssue({
+      code: "custom",
+      path: ["sourceUrls"],
+      message: "official-feed routes require at least one direct source URL",
+    });
+  }
+  if (route.channel !== "official-feed" && route.sourceUrls.length > 0) {
+    context.addIssue({
+      code: "custom",
+      path: ["sourceUrls"],
+      message: "sourceUrls are only valid for official-feed routes",
+    });
+  }
 });
 
 export const NewspaperPresetSchema = z
@@ -36,6 +52,14 @@ export const NewspaperPresetSchema = z
         }),
       )
       .min(1),
+    subjectIdentity: z.object({
+      associatedAliases: z.array(
+        z.object({
+          value: z.string().min(2),
+          language: z.string().min(2),
+        }),
+      ).default([]),
+    }).optional(),
     officialDomains: z.array(z.string().min(1)),
     sections: z.array(EditorialSectionSchema).min(2).max(10),
     discovery: z.array(DiscoveryRouteSchema).min(1),
@@ -71,6 +95,18 @@ export const NewspaperPresetSchema = z
           code: "custom",
           message: `route ${route.id} references unknown section ${route.sectionId}`,
         });
+      }
+      for (const sourceUrl of route.sourceUrls) {
+        const hostname = new URL(sourceUrl).hostname.toLowerCase().replace(/^www\./, "");
+        const allowed = preset.officialDomains.some((domain) =>
+          hostname === domain || hostname.endsWith(`.${domain}`),
+        );
+        if (!allowed) {
+          context.addIssue({
+            code: "custom",
+            message: `route ${route.id} source URL is outside officialDomains: ${hostname}`,
+          });
+        }
       }
     }
   });

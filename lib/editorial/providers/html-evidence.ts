@@ -1,116 +1,10 @@
-import { createGoogle, type GoogleProviderMetadata } from "@ai-sdk/google";
-import { generateText } from "ai";
-
 import { cleanEvidenceText } from "@/lib/editorial/normalize-evidence";
 import {
   RawEvidenceCandidateSchema,
-  type DiscoveryProvider,
   type RawEvidenceCandidate,
 } from "@/lib/editorial/types";
 
-type GroundedUrlSource = {
-  sourceType: "url";
-  url: string;
-  title?: string;
-};
-
-export type GeminiSearchResult = {
-  sources: GroundedUrlSource[];
-  providerMetadata?: Record<string, unknown>;
-};
-
-type SearchInput = Parameters<DiscoveryProvider["search"]>[0];
-type SearchRunner = (input: {
-  apiKey: string;
-  model: string;
-  prompt: string;
-  startTime: string;
-  endTime: string;
-}) => Promise<GeminiSearchResult>;
-type FetchPage = (source: GroundedUrlSource, input: SearchInput) => Promise<RawEvidenceCandidate | null>;
-
-const MAX_GROUNDED_SOURCES = 8;
 const MAX_PAGE_BYTES = 1_000_000;
-
-function discoveryModel() {
-  const explicit = process.env.DISCOVERY_MODEL?.trim();
-  if (explicit) return explicit;
-  if (process.env.AI_PROVIDER?.trim().toLowerCase() === "gemini") {
-    const legacy = process.env.AI_MODEL?.trim();
-    if (legacy) return legacy;
-  }
-  throw new Error("DISCOVERY_MODEL이 설정되지 않았습니다.");
-}
-
-export function getDiscoveryRuntimeMetadata() {
-  return { provider: "gemini" as const, model: discoveryModel() };
-}
-
-export function isWebSearchDiscoveryConfigured() {
-  try {
-    getDiscoveryRuntimeMetadata();
-    return Boolean(process.env.GOOGLE_GENERATIVE_AI_API_KEY);
-  } catch {
-    return false;
-  }
-}
-
-function kstRange(sourceDate: string) {
-  const start = new Date(`${sourceDate}T00:00:00+09:00`);
-  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
-  return { startTime: start.toISOString(), endTime: end.toISOString() };
-}
-
-function searchPrompt(input: SearchInput) {
-  const aliases = input.preset.aliases.map((alias) => `${alias.value} (${alias.language})`).join(", ");
-  return [
-    `Find public web pages published on ${input.sourceDate} in Korea/Japan time for this newspaper route.`,
-    `Topic: ${input.preset.displayName}. Aliases: ${aliases}.`,
-    `Editorial intent: ${input.route.intent}. Query focus: ${input.query}.`,
-    `Locales: ${input.route.locales.join(", ")}. Exclude: ${input.route.excludeTerms.join(", ") || "none"}.`,
-    "Prefer primary or official pages when relevant, while retaining useful independent reporting.",
-    "Do not invent links. Return a short overview; only Google Search grounding sources will be consumed.",
-  ].join("\n");
-}
-
-const defaultSearchRunner: SearchRunner = async (input) => {
-  const google = createGoogle({ apiKey: input.apiKey });
-  const result = await generateText({
-    model: google(input.model),
-    tools: {
-      google_search: google.tools.googleSearch({
-        searchTypes: { webSearch: {} },
-        timeRangeFilter: { startTime: input.startTime, endTime: input.endTime },
-      }),
-    },
-    prompt: input.prompt,
-    maxRetries: 0,
-    timeout: { totalMs: 90_000 },
-    maxOutputTokens: 512,
-  });
-  return {
-    sources: result.sources.flatMap((source) => source.sourceType === "url"
-      ? [{ sourceType: "url" as const, url: source.url, title: source.title }]
-      : []),
-    providerMetadata: result.providerMetadata,
-  };
-};
-
-function groundedSources(result: GeminiSearchResult) {
-  const google = result.providerMetadata?.google as GoogleProviderMetadata | undefined;
-  const groundedUrls = new Set(
-    google?.groundingMetadata?.groundingChunks
-      ?.flatMap((chunk) => {
-        if (chunk.web?.uri) return [chunk.web.uri];
-        const retrievedUri = chunk.retrievedContext?.uri;
-        return retrievedUri?.startsWith("http://") || retrievedUri?.startsWith("https://")
-          ? [retrievedUri]
-          : [];
-      }) ?? [],
-  );
-  if (groundedUrls.size === 0) return [];
-  return result.sources.filter((source) => groundedUrls.has(source.url));
-}
 
 function attributes(tag: string) {
   const result = new Map<string, string>();
@@ -146,9 +40,11 @@ function canonicalLink(html: string, baseUrl: string) {
   return baseUrl;
 }
 
-function parsePublishedAt(value: string) {
+export function parsePublishedAt(value: string | undefined) {
   if (!value) return null;
-  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00+09:00` : value;
+  const normalized = /^\d{4}[.-]\d{2}[.-]\d{2}$/.test(value)
+    ? `${value.replaceAll(".", "-")}T12:00:00+09:00`
+    : value;
   const date = new Date(normalized);
   return Number.isNaN(date.getTime()) ? null : date;
 }
@@ -196,9 +92,39 @@ function pageExcerpt(html: string, structuredDescription?: string) {
   if (structuredDescription) return cleanEvidenceText(structuredDescription).slice(0, 1_200);
   for (const match of html.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)) {
     const paragraph = cleanEvidenceText(match[1] ?? "");
-    if (paragraph.length >= 40) return paragraph.slice(0, 1_200);
+    if (paragraph.length >= 20) return paragraph.slice(0, 1_200);
   }
   return "";
+}
+
+function scopedLead(html: string) {
+  const scope = html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1]
+    ?? html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1]
+    ?? "";
+  if (!scope) return "";
+  const paragraphs = [...scope.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)]
+    .map((match) => cleanEvidenceText(match[1] ?? ""))
+    .filter((paragraph) => paragraph.length >= 20)
+    .slice(0, 2);
+  return cleanEvidenceText(paragraphs.join(" ")).slice(0, 800);
+}
+
+export function extractPrimaryIdentitySurface(input: {
+  html: string;
+  sourceTitle?: string;
+}) {
+  const structured = jsonLdArticle(input.html);
+  const title = pageTitle(input.html, input.sourceTitle, structured?.headline);
+  const lead = cleanEvidenceText(
+    scopedLead(input.html)
+      || structured?.description
+      || metaValue(input.html, ["og:description", "twitter:description", "description"]),
+  ).slice(0, 800);
+  const language = input.html
+    .match(/<html\b[^>]*\blang=["']([^"']+)["']/i)?.[1]
+    ?.split("-")[0]
+    ?.toLowerCase();
+  return { title, lead, language: language && /^[a-z]{2,3}$/.test(language) ? language : undefined };
 }
 
 export function extractEvidenceFromHtml(input: {
@@ -207,6 +133,8 @@ export function extractEvidenceFromHtml(input: {
   providerUrl: string;
   sourceTitle?: string;
   fallbackLanguage: string;
+  fallbackPublishedAt?: Date;
+  sourceType?: "official" | "news";
 }) {
   const structured = jsonLdArticle(input.html);
   const title = pageTitle(input.html, input.sourceTitle, structured?.headline);
@@ -219,7 +147,9 @@ export function extractEvidenceFromHtml(input: {
     "publishdate",
     "dc.date.issued",
   ]) || structured?.datePublished
-    || cleanEvidenceText(input.html.match(/<time\b[^>]*datetime=["']([^"']+)["']/i)?.[1] ?? ""));
+    || cleanEvidenceText(input.html.match(/<time\b[^>]*datetime=["']([^"']+)["']/i)?.[1] ?? ""))
+    ?? input.fallbackPublishedAt
+    ?? null;
   if (!title || excerpt.length < 20 || !publishedAt) return null;
 
   const htmlLanguage = input.html.match(/<html\b[^>]*\blang=["']([^"']+)["']/i)?.[1];
@@ -238,11 +168,11 @@ export function extractEvidenceFromHtml(input: {
     publisher,
     publishedAt,
     language: htmlLanguage?.split("-")[0] ?? input.fallbackLanguage,
-    sourceType: "news",
+    sourceType: input.sourceType ?? "news",
   });
 }
 
-async function readTextWithLimit(response: Response) {
+export async function readTextWithLimit(response: Response) {
   if (!response.body) return (await response.text()).slice(0, MAX_PAGE_BYTES);
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -264,9 +194,16 @@ async function readTextWithLimit(response: Response) {
   return new TextDecoder().decode(merged);
 }
 
-const defaultFetchPage: FetchPage = async (source, input) => {
+export async function fetchHtmlEvidence(input: {
+  url: string;
+  sourceTitle?: string;
+  fallbackLanguage: string;
+  fallbackPublishedAt?: Date;
+  sourceType?: "official" | "news";
+  fetcher?: typeof fetch;
+}): Promise<RawEvidenceCandidate | null> {
   try {
-    const response = await fetch(source.url, {
+    const response = await (input.fetcher ?? fetch)(input.url, {
       headers: { Accept: "text/html,application/xhtml+xml,text/plain;q=0.8" },
       cache: "no-store",
       redirect: "follow",
@@ -274,22 +211,51 @@ const defaultFetchPage: FetchPage = async (source, input) => {
     });
     if (!response.ok) return null;
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-    if (contentType && !/text\/html|application\/xhtml\+xml|text\/plain/.test(contentType)) {
-      return null;
-    }
+    if (contentType && !/text\/html|application\/xhtml\+xml|text\/plain/.test(contentType)) return null;
     return extractEvidenceFromHtml({
       html: await readTextWithLimit(response),
-      finalUrl: response.url || source.url,
-      providerUrl: source.url,
-      sourceTitle: source.title,
-      fallbackLanguage: input.route.locales[0]?.split("-")[0] ?? "und",
+      finalUrl: response.url || input.url,
+      providerUrl: input.url,
+      sourceTitle: input.sourceTitle,
+      fallbackLanguage: input.fallbackLanguage,
+      fallbackPublishedAt: input.fallbackPublishedAt,
+      sourceType: input.sourceType,
     });
   } catch {
     return null;
   }
-};
+}
 
-async function mapWithConcurrency<T, R>(values: T[], concurrency: number, task: (value: T) => Promise<R>) {
+export async function fetchPrimaryIdentitySurface(input: {
+  url: string;
+  sourceTitle?: string;
+  fetcher?: typeof fetch;
+}) {
+  try {
+    const response = await (input.fetcher ?? fetch)(input.url, {
+      headers: { Accept: "text/html,application/xhtml+xml" },
+      cache: "no-store",
+      redirect: "follow",
+      signal: AbortSignal.timeout(12_000),
+    });
+    if (!response.ok) return null;
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    if (contentType && !/text\/html|application\/xhtml\+xml/.test(contentType)) return null;
+    const surface = extractPrimaryIdentitySurface({
+      html: await readTextWithLimit(response),
+      sourceTitle: input.sourceTitle,
+    });
+    return surface.title || surface.lead ? surface : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function mapWithConcurrency<T, R>(
+  values: T[],
+  concurrency: number,
+  task: (value: T) => Promise<R>,
+) {
   const results = new Array<R>(values.length);
   let cursor = 0;
   async function worker() {
@@ -300,32 +266,4 @@ async function mapWithConcurrency<T, R>(values: T[], concurrency: number, task: 
   }
   await Promise.all(Array.from({ length: Math.min(concurrency, values.length) }, () => worker()));
   return results;
-}
-
-export class GeminiWebSearchDiscoveryProvider implements DiscoveryProvider {
-  readonly name = "gemini-web-search";
-  readonly channels = ["web-search"] as const;
-
-  constructor(
-    private readonly apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY,
-    private readonly model = process.env.DISCOVERY_MODEL,
-    private readonly runSearch: SearchRunner = defaultSearchRunner,
-    private readonly fetchPage: FetchPage = defaultFetchPage,
-  ) {}
-
-  async search(input: SearchInput) {
-    if (!this.apiKey) throw new Error("GOOGLE_GENERATIVE_AI_API_KEY가 설정되지 않았습니다.");
-    const model = this.model?.trim() || discoveryModel();
-    const range = kstRange(input.sourceDate);
-    const result = await this.runSearch({
-      apiKey: this.apiKey,
-      model,
-      prompt: searchPrompt(input),
-      ...range,
-    });
-    const sources = groundedSources(result).slice(0, MAX_GROUNDED_SOURCES);
-    if (sources.length === 0) return [];
-    const candidates = await mapWithConcurrency(sources, 2, (source) => this.fetchPage(source, input));
-    return candidates.filter((candidate): candidate is RawEvidenceCandidate => candidate !== null);
-  }
 }
